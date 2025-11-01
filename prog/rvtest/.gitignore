@@ -1,0 +1,9 @@
+build/
+
+*.d
+*.o
+*.elf
+*.bin
+*.hex
+*.mem
+*.dump

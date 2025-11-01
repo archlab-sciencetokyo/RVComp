@@ -1,0 +1,7 @@
+config.mk
+
+bd/
+logs/
+
+rv32*/
+rv64*/
