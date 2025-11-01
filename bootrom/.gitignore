@@ -1,0 +1,11 @@
+*.d
+*.o
+*.elf
+*.bin
+*.hex
+*.mem
+*.dump
+
+*.dtb
+
+config.mk
