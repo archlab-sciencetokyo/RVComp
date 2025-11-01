@@ -53,8 +53,8 @@ Please unzip `tools.zip`.
 
 
 Please make sure the necessary tools and the FPGA board are ready:
-- {ref}`Vivado (2024.1 recommended) <vivado>`
-- {ref}`uv <uv>`
+- [Vivado (2024.1 recommended)](https://www.xilinx.com/support/download.html)
+- [uv](https://github.com/astral-sh/uv)
 - FPGA board (Nexys 4 DDR or Arty A7 35T)
 
 Guidance for WSL2 usage will be added to this section later.
@@ -103,4 +103,23 @@ $ udevadm info /dev/ttyUSB1 | grep ID_VENDOR=
 ```
 
 Please record the `/dev/ttyUSB*` path assigned to the FPGA board.
+
+
+## Project Information
+This project started June, 2024.\
+**Project Name**: RVComp\
+**Version**: 1.0.0\
+**Last Updated**: 2025/10/31
+
+
+## Contributors
+Contributors to this project are as follows:\
+[shmrnrk](https://github.com/shmknrk) \
+[yuyu5510](https://github.com/yuyu5510) \
+[Kise K.](https://github.com/kisek) \
+We would like to appreciate the contributions from [shmknrk](https://github.com/shmknrk) for his significant contributions to this repository.
+
+## Change History
+
+- **2025-10-31**: Initial release
 
