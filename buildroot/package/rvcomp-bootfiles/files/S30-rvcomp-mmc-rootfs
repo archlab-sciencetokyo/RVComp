@@ -1,0 +1,155 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+#
+# Early MMC rootfs bootstrap for initramfs.
+
+MMC_MOUNT_OPTS="${RVCOMP_MMC_MOUNT_OPTS:-rw,noatime,errors=remount-ro}"
+MMC_FSCK_ON_BOOT="${RVCOMP_MMC_FSCK_ON_BOOT:-1}"
+MMC_DEV_CANDIDATES="${RVCOMP_MMC_DEV_CANDIDATES:-/dev/mmcblk0}"
+MMC_WAIT_TENTHS="${RVCOMP_MMC_WAIT_TENTHS:-50}"
+LOG_TMPFS_SIZE="${RVCOMP_LOG_TMPFS_SIZE:-8M}"
+LOG_TMPFS_OPTS="${RVCOMP_LOG_TMPFS_OPTS:-mode=0755,size=${LOG_TMPFS_SIZE},nosuid,nodev}"
+MMC_DEVICE=""
+SWITCH_ROOT_REQ="/.rvcomp-switch-root"
+
+module_available() {
+    mod_name="$1"
+    mod_file="$(find /lib/modules -type f \( -name "${mod_name}.ko" -o -name "${mod_name}.ko.*" \) -print -quit 2>/dev/null)"
+    [ -n "${mod_file}" ]
+}
+
+boot_mode() {
+    if [ ! -r /proc/cmdline ]; then
+        return 0
+    fi
+
+    for arg in $(cat /proc/cmdline); do
+        case "${arg}" in
+            rvcomp_boot=*)
+                echo "${arg#rvcomp_boot=}"
+                return 0
+                ;;
+        esac
+    done
+}
+
+find_mmc_device() {
+    for candidate in ${MMC_DEV_CANDIDATES}; do
+        if [ -b "${candidate}" ]; then
+            MMC_DEVICE="${candidate}"
+            return 0
+        fi
+    done
+
+    MMC_DEVICE=""
+    return 1
+}
+
+wait_for_mmc_device() {
+    timeout="${MMC_WAIT_TENTHS}"
+    while [ "${timeout}" -gt 0 ]; do
+        if find_mmc_device; then
+            return 0
+        fi
+        sleep 0.1
+        timeout=$((timeout - 1))
+    done
+
+    find_mmc_device
+}
+
+run_rootfs_fsck() {
+    mmc_device="$1"
+
+    if [ "${MMC_FSCK_ON_BOOT}" != "1" ]; then
+        echo "[init] rootfs fsck disabled (RVCOMP_MMC_FSCK_ON_BOOT=${MMC_FSCK_ON_BOOT})"
+        return 0
+    fi
+
+    if ! command -v e2fsck >/dev/null 2>&1; then
+        echo "[init] e2fsck not found, skipping rootfs check"
+        return 0
+    fi
+
+    echo "[init] running e2fsck -p ${mmc_device}"
+    e2fsck -p "${mmc_device}"
+    fsck_rc=$?
+    case "${fsck_rc}" in
+        0)
+            echo "[init] fsck clean"
+            return 0
+            ;;
+        1)
+            echo "[init] fsck corrected filesystem errors"
+            return 0
+            ;;
+        2)
+            echo "[init] fsck corrected errors; reboot is recommended"
+            MMC_MOUNT_OPTS="ro"
+            echo "[init] forcing root mount option to ro"
+            return 0
+            ;;
+        *)
+            echo "[init] fsck failed (rc=${fsck_rc})"
+            return 1
+            ;;
+    esac
+}
+
+setup_log_tmpfs() {
+    mkdir -p /mnt/mmc/var /mnt/mmc/var/log
+    if mount -t tmpfs -o "${LOG_TMPFS_OPTS}" tmpfs /mnt/mmc/var/log; then
+        echo "[init] /var/log backend: tmpfs (${LOG_TMPFS_OPTS})"
+        return 0
+    fi
+
+    echo "[init] tmpfs /var/log mount failed, keeping ext4 backend"
+    return 1
+}
+
+if [ "$(boot_mode)" = "uart" ]; then
+    echo "[init] rvcomp_boot=uart; skipping MMC rootfs hook"
+    exit 0
+fi
+
+if ! module_available rvcomp_mmc; then
+    echo "[init] rvcomp_mmc module not present; skipping MMC rootfs hook"
+    exit 0
+fi
+
+echo "[init] loading rvcomp_mmc"
+if ! modprobe rvcomp_mmc >/dev/null 2>&1; then
+    echo "[init] rvcomp_mmc modprobe failed"
+    exit 0
+fi
+
+if ! wait_for_mmc_device; then
+    echo "[init] MMC block device not found (candidates: ${MMC_DEV_CANDIDATES})"
+    exit 0
+fi
+
+echo "[init] ${MMC_DEVICE} found"
+mkdir -p /mnt/mmc
+if ! run_rootfs_fsck "${MMC_DEVICE}"; then
+    echo "[init] fsck failed, skipping root mount"
+    exit 0
+fi
+
+if ! mount -o "${MMC_MOUNT_OPTS}" -t ext4 "${MMC_DEVICE}" /mnt/mmc; then
+    echo "[init] ext4 mount failed"
+    exit 0
+fi
+
+echo "[init] ext4 mounted (${MMC_MOUNT_OPTS})"
+if [ ! -x /mnt/mmc/sbin/init ]; then
+    echo "[init] /mnt/mmc/sbin/init not found"
+    umount /mnt/mmc >/dev/null 2>&1 || true
+    exit 0
+fi
+
+setup_log_tmpfs || true
+echo "[init] request switch_root to /mnt/mmc"
+printf '%s %s\n' "/mnt/mmc" "/sbin/init" > "${SWITCH_ROOT_REQ}"
+exit 0

@@ -12,7 +12,7 @@
 /* DDR3/DDR2 memory interface for simulation */
 /******************************************************************************************/
 module mig_7series_0 #(
-`ifdef DDR2 // Nexys
+`ifdef NEXYS // Nexys
     localparam DRAM_SIZE    = 128*1024*1024     ,
     localparam ADDR_WIDTH   = 27                ,
 `else // DDR3, Arty
@@ -23,7 +23,7 @@ module mig_7series_0 #(
     localparam STRB_WIDTH   = DATA_WIDTH/8
 ) (
     // Memory interface ports
-`ifdef DDR2 // Nexys
+`ifdef NEXYS // Nexys
     output logic  [12:0] ddr2_addr              ,
     output logic   [2:0] ddr2_ba                ,
     output logic         ddr2_cas_n             ,

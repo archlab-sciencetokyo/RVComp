@@ -6,13 +6,11 @@
 *~
 *.bak
 
-config.mk
 *.RTL.v
 
 obj_dir/
 a.out
 
-*.d
 *.o
 *.elf
 *.bin
@@ -44,3 +42,4 @@ __pycache__/
 *.pyc
 .venv/
 image
+.memo/

@@ -218,16 +218,22 @@ def serial_read(port: serial.Serial, load_event: bool = False) -> None:
         global lock
         while port and port.is_open:
             try:
-                if port.in_waiting > 0:
-                    data_bytes = port.read(port.in_waiting)
-                    received_data = data_bytes.decode('utf-8', errors='ignore')
-                    print(received_data, end="", flush=True)
-                    if '!\x0a' in received_data: 
-                        time.sleep(0.1)
-                        print("\r\nDetected load signal. Preparing to send file...")
-                        with lock:
-                            load_file = 1
-                        break
+                # Blocking read: waits up to port.timeout (0.1s), zero CPU when idle
+                data_bytes = port.read(1)
+                if not data_bytes:
+                    continue  # timeout, no data
+                # Read any remaining buffered data
+                remaining = port.in_waiting
+                if remaining > 0:
+                    data_bytes += port.read(remaining)
+                received_data = data_bytes.decode('utf-8', errors='ignore')
+                print(received_data, end="", flush=True)
+                if '!\x0a' in received_data: 
+                    time.sleep(0.1)
+                    print("\r\nDetected load signal. Preparing to send file...")
+                    with lock:
+                        load_file = 1
+                    break
             except (serial.SerialException, OSError):
                 break
             except Exception as e:
@@ -236,10 +242,16 @@ def serial_read(port: serial.Serial, load_event: bool = False) -> None:
     # Interactive read loop
     while port and port.is_open:
         try:
-            if port.in_waiting > 0:
-                data_bytes = port.read(port.in_waiting)
-                received_data = data_bytes.decode('utf-8', errors='ignore')
-                print(received_data, end="", flush=True)
+            # Blocking read: waits up to port.timeout (0.1s), zero CPU when idle
+            data_bytes = port.read(1)
+            if not data_bytes:
+                continue  # timeout, no data
+            # Read any remaining buffered data
+            remaining = port.in_waiting
+            if remaining > 0:
+                data_bytes += port.read(remaining)
+            received_data = data_bytes.decode('utf-8', errors='ignore')
+            print(received_data, end="", flush=True)
         except (serial.SerialException, OSError):
             break
         except Exception as e:
@@ -471,7 +483,7 @@ def main() -> None:
                      args.stopbits, args.rtscts, args.xonxoff, args.dsrdtr,
                      args.write_timeout, args.inter_byte_timeout)
 
-    if not os.path.exists(fw_payload_path):
+    if args.linux_boot and not os.path.exists(fw_payload_path):
         print(f"Warning: fw_payload.bin not found at {fw_payload_path}. Linux boot mode will fail if used.")
         exit(1)
 

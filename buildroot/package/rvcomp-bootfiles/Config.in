@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+
+config BR2_PACKAGE_RVCOMP_BOOTFILES
+	bool
+	default y
+	help
+	  Install the initramfs dispatcher and optional early boot hooks
+	  for RVCOMP platform bring-up.

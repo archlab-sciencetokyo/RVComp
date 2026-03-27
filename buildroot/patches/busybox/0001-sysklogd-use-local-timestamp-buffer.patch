@@ -1,0 +1,77 @@
+--- a/sysklogd/syslogd.c
++++ b/sysklogd/syslogd.c
+@@ -817,6 +817,31 @@
+ 		}
+ 	}
+ 	snprintf(res20, 20, "<%d>", pri);
++}
++
++static void format_local_timestamp(char *timestamp_buf, time_t now)
++{
++	static const char month_names[] =
++		"JanFebMarAprMayJunJulAugSepOctNovDec";
++	struct tm tm;
++
++	if (!localtime_r(&now, &tm)
++	 || tm.tm_mon < 0 || tm.tm_mon > 11
++	 || tm.tm_mday < 1 || tm.tm_mday > 31
++	 || tm.tm_hour < 0 || tm.tm_hour > 23
++	 || tm.tm_min < 0 || tm.tm_min > 59
++	 || tm.tm_sec < 0 || tm.tm_sec > 60
++	) {
++		strcpy(timestamp_buf, "Jan  1 00:00:00");
++		return;
++	}
++
++	memcpy(timestamp_buf, month_names + tm.tm_mon * 3, 3);
++	sprintf(timestamp_buf + 3, " %2u %02u:%02u:%02u",
++		tm.tm_mday,
++		tm.tm_hour,
++		tm.tm_min,
++		tm.tm_sec);
+ }
+ 
+ /* len parameter is used only for "is there a timestamp?" check.
+@@ -825,6 +850,7 @@
+ static void timestamp_and_log(int pri, char *msg, int len)
+ {
+ 	char *timestamp = NULL;
++	char timestamp_buf[20];
+ 	time_t now;
+ 
+ 	/* Jan 18 00:11:22 msg... */
+@@ -834,7 +860,9 @@
+ 	) {
+ 		if (!(option_mask32 & OPT_timestamp)) {
+ 			/* use message timestamp */
+-			timestamp = msg;
++			memcpy(timestamp_buf, msg, 15);
++			timestamp_buf[15] = '\0';
++			timestamp = timestamp_buf;
+ 			now = 0;
+ 		}
+ 		msg += 16;
+@@ -845,18 +873,16 @@
+ 		struct timeval tv;
+ 		xgettimeofday(&tv);
+ 		now = tv.tv_sec;
+-		timestamp = ctime(&now) + 4; /* skip day of week */
+-		/* overwrite year by milliseconds, zero terminate */
+-		sprintf(timestamp + 15, ".%03u", (unsigned)tv.tv_usec / 1000u);
+-	} else {
+-		timestamp[15] = '\0';
++		format_local_timestamp(timestamp_buf, now);
++		sprintf(timestamp_buf + 15, ".%03u", (unsigned)tv.tv_usec / 1000u);
++		timestamp = timestamp_buf;
+ 	}
+ #else
+ 	if (!timestamp) {
+ 		time(&now);
+-		timestamp = ctime(&now) + 4; /* skip day of week */
++		format_local_timestamp(timestamp_buf, now);
++		timestamp = timestamp_buf;
+ 	}
+-	timestamp[15] = '\0';
+ #endif
+ 
+ 	if (option_mask32 & OPT_kmsg) {

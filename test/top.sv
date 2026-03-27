@@ -65,6 +65,17 @@ module top;
         end
     end
 
+    always_ff @(cb) begin
+        if (soc.axi_interconnect.rd_state_q==soc.axi_interconnect.RD_IDLE &&
+            soc.axi_interconnect.cpu_araddr_i[`PLEN-1:28] >= 'hc) begin
+                $display("READ access to undefined address %h\n", soc.axi_interconnect.cpu_araddr_i);
+                $display("mprv: %b, mpp: %b, priv_lvl_i: %b, satp[31]: %b", soc.mmu.mprv_i, soc.mmu.mpp_i, soc.cpu.priv_lvl, soc.mmu.satp_i[31]);
+                if (soc.mmu.priv_lvl_i != 2'b11) begin
+                    $finish(1);
+                end
+        end
+    end
+
     // dump FST: Fast Signal Trace
     string trace_fst_file;
     initial begin
@@ -159,7 +170,28 @@ module top;
         .rst_ni         (rst_n          ), // input  wire
         .rxd_i          (txd            ), // input  wire
         .txd_o          (rxd            ), // output wire
-`ifdef DDR2 // Nexys
+        .eth_mdc        (               ), // output wire
+        .eth_mdio       (               ), // inout  wire
+        .eth_rstn       (               ), // output wire
+`ifdef ETH_IF_RMII
+        .eth_crsdv      (               ), // input  wire
+        .eth_rxerr      (               ), // input  wire
+        .eth_rxd        (               ), // input  wire [1:0]
+        .eth_txen       (               ), // output wire
+        .eth_txd        (               ), // output wire [1:0]
+        .eth_refclk     (               ), // output wire
+        .eth_intn       (               ), // input  wire
+`else
+        .eth_rx_clk     (clk            ), // input  wire
+        .eth_tx_clk     (clk            ), // input  wire
+        .eth_rx_dv      (1'b0           ), // input  wire
+        .eth_rxerr      (1'b0           ), // input  wire
+        .eth_rxd        (4'h0           ), // input  wire [3:0]
+        .eth_tx_en      (               ), // output wire
+        .eth_txd        (               ), // output wire [3:0]
+        .eth_refclk     (               ), // output wire
+`endif
+`ifdef NEXYS // Nexys
         .ddr2_addr      (               ), // output wire [12:0]
         .ddr2_ba        (               ), // output wire  [2:0]
         .ddr2_cas_n     (               ), // output wire
@@ -173,7 +205,12 @@ module top;
         .ddr2_dqs_p     (               ), // inout  wire  [1:0]
         .ddr2_cs_n      (               ), // output wire  [0:0]
         .ddr2_dm        (               ), // output wire  [1:0]
-        .ddr2_odt       (               )  // output wire  [0:0]
+        .ddr2_odt       (               ), // output wire  [0:0]
+        .sd_cd          (               ),  // input  wire
+        .sd_rst         (               ),  // output wire
+        .sd_sclk        (               ),  // output wire
+        .sd_cmd         (               ),  // inout  wire
+        .sd_dat         (               )   // inout  wire [3:0]
 `else // DDR3, Arty
         .ddr3_addr      (               ), // output wire [13:0]
         .ddr3_ba        (               ), // output wire  [2:0]

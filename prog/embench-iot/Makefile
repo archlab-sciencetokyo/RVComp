@@ -65,7 +65,7 @@ RISCV_GCC           := $(RISCV_PREFIX)gcc
 RISCV_OBJDUMP       := $(RISCV_PREFIX)objdump -d
 RISCV_OBJCOPY       := $(RISCV_PREFIX)objcopy
 
-RISCV_CFLAGS        += -O2
+RISCV_CFLAGS        += -O2 -std=gnu11 # for compile gcc > 15 cause bool error
 RISCV_CFLAGS        += -march=$(RISCV_ARCH)
 RISCV_CFLAGS        += -mabi=$(RISCV_ABI)
 RISCV_CFLAGS        += -nostartfiles

@@ -15,7 +15,7 @@ module plic #(
     parameter  ADDR_WIDTH       = 0                     ,
     localparam DATA_WIDTH       = 32                    ,
     localparam STRB_WIDTH       = DATA_WIDTH/8          ,
-    parameter  NUM_SRCS         = 2                     , // interrupt source 0 is reserved (it does not exist)
+    parameter  NUM_SRCS         = 3                     , // interrupt source 0 is reserved (it does not exist)
     parameter  NUM_CTXS         = 2                     , // number of hart contexts (a hart context is a given privilege mode on a given hart)
     parameter  MAX_PRIORITY     = 15                    , // (> 0)
     localparam PRIORITY_WIDTH   = $clog2(MAX_PRIORITY+1),
@@ -51,7 +51,7 @@ module plic #(
     initial begin
         if (ADDR_WIDTH  ==0 ) $fatal(1, "specify a plic ADDR_WIDTH");
         if (DATA_WIDTH  !=32) $fatal(1, "plic DATA_WIDTH is assumed to be 32-bit");
-        if (NUM_SRCS    !=2 ) $fatal(1, "number of interrupt sources must be 2");
+        if (NUM_SRCS    < 2 ) $fatal(1, "number of interrupt sources must be at least 2");
         if (NUM_CTXS    !=2 ) $fatal(1, "number of interrupt contexts must be 2");
         if (MAX_PRIORITY<=0 ) $fatal(1, "maximum priority value must be greater than 0");
     end
@@ -61,9 +61,9 @@ module plic #(
     genvar  gi, gj  ;
 
     // plic gateway registers
-    localparam IDLE = 1'd0, BUSY = 1'd1;
-    reg  [0:0] gw_state_q [0:NUM_SRCS-1], gw_state_d [0:NUM_SRCS-1] ;
-
+    // wait-for-low state avoids re-pending level-triggered IRQs until source deasserts
+    localparam IDLE = 2'd0, BUSY = 2'd1, WAIT_LOW = 2'd2;
+    reg  [1:0] gw_state_q [0:NUM_SRCS-1], gw_state_d [0:NUM_SRCS-1] ;
     reg  [0:0] src_irq_q [0:NUM_SRCS-1] , src_irq_d [0:NUM_SRCS-1]  ; // source interrupt request
 
     // plic core registers
@@ -104,8 +104,14 @@ module plic #(
                     BUSY    : begin
                         for (j=0; j<NUM_CTXS; j=j+1) begin
                             if ((complete_q[j]==gi) && enable_q[j][gi]) begin
-                                gw_state_d[gi]   = IDLE          ;
+                                // stay armed until source deasserts to avoid immediate re-pending
+                                gw_state_d[gi]   = src_irq_i[gi] ? WAIT_LOW : IDLE;
                             end
+                        end
+                    end
+                    WAIT_LOW: begin
+                        if (!src_irq_i[gi]) begin
+                            gw_state_d[gi]   = IDLE          ;
                         end
                     end
                     default : ;
@@ -165,7 +171,8 @@ module plic #(
                 rresp_d         = `RRESP_OKAY       ;
                 case (araddr_i)
                     PRIORITY_BASE                   : rdata_d   = 'h0                                       ; // interrupt source 0 is reserved (it does not exist)
-                    PRIORITY_BASE+4                 : rdata_d   = {{(32-MAX_PRIORITY){1'b0}}, priority_q[1]};
+                    PRIORITY_BASE+4                 : rdata_d   = {{(32-PRIORITY_WIDTH){1'b0}}, priority_q[1]};
+                    PRIORITY_BASE+8                 : rdata_d   = {{(32-PRIORITY_WIDTH){1'b0}}, priority_q[2]};
                     PENDING_BASE                    : rdata_d   = {{(32-NUM_SRCS){1'b0}}, pending_q}        ;
                     ENABLE_BASE+(ENABLE_SIZE)*0     : rdata_d   = {{32-NUM_SRCS{1'b0}}, enable_q[0]}        ;
                     ENABLE_BASE+(ENABLE_SIZE)*1     : rdata_d   = {{32-NUM_SRCS{1'b0}}, enable_q[1]}        ;
@@ -195,6 +202,7 @@ module plic #(
                     case (awaddr_i)
                         PRIORITY_BASE                   :                                                       ; // interrupt source 0 is reserved (it does not exist)
                         PRIORITY_BASE+4                 : priority_d[1]     = wdata_i[PRIORITY_WIDTH-1:0]       ;
+                        PRIORITY_BASE+8                 : priority_d[2]     = wdata_i[PRIORITY_WIDTH-1:0]       ;
                         PENDING_BASE                    : pending_d         = {wdata_i[NUM_SRCS-1:1], 1'b0}     ; // interrupt source 0 is reserved (it does not exist)
                         ENABLE_BASE+(ENABLE_SIZE*0)     : enable_d[0]       = {wdata_i[NUM_SRCS-1:1], 1'b0}     ; // interrupt source 0 is reserved (it does not exist)
                         ENABLE_BASE+(ENABLE_SIZE*1)     : enable_d[1]       = {wdata_i[NUM_SRCS-1:1], 1'b0}     ; // interrupt source 0 is reserved (it does not exist)

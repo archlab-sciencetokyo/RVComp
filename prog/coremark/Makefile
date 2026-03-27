@@ -55,7 +55,7 @@ RISCV_ABI           := $(if $(filter $(XLEN),64),lp64,ilp32)
 
 -include ../../config.mk
 
-RISCV_PREFIX        := $(RISCV_PATH)/riscv$(XLEN)-unknown-elf-
+RISCV_PREFIX        := $(RISCV_PATH)riscv$(XLEN)-unknown-elf-
 RISCV_GCC           := $(RISCV_PREFIX)gcc
 RISCV_OBJDUMP       := $(RISCV_PREFIX)objdump -d
 RISCV_OBJCOPY       := $(RISCV_PREFIX)objcopy

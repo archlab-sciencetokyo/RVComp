@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
+// Copyright (c) 2026 Archlab, Science Tokyo
 /dts-v1/;
 
 / {
   #address-cells = <2>;
   #size-cells = <2>;
-  compatible = "isct,rvcom";
-  model = "isct,rvcom";
+  compatible = "isct,rvcomp";
+  model = "isct,rvcomp";
   chosen {
     stdout-path = &SERIAL0;
     bootargs = "root=/dev/ram console=hvc0 earlycon=sbi";
@@ -12,7 +14,7 @@
   cpus {
     #address-cells = <1>;
     #size-cells = <0>;
-    timebase-frequency = <160000000>;
+    timebase-frequency = <150000000>;
     CPU0: cpu@0 {
       device_type = "cpu";
       reg = <0>;
@@ -38,7 +40,7 @@
   soc {
     #address-cells = <2>;
     #size-cells = <2>;
-    compatible = "isct,rvcom", "simple-bus";
+    compatible = "isct,rvcomp", "simple-bus";
     ranges;
     clint@2000000 {
       compatible = "riscv,clint0";
@@ -50,19 +52,38 @@
       #address-cells = <2>;
       interrupts-extended = <&CPU0_intc 11 &CPU0_intc 9>;
       reg = <0x0 0xc000000 0x0 0x1000000>;
-      riscv,ndev = <0x1>;
+      riscv,ndev = <0x2>;
       riscv,max-priority = <0xf>;
       #interrupt-cells = <1>;
       interrupt-controller;
     };
-    SERIAL0: rvcom-uart@10000000 {
-      compatible = "isct,rvcom-uart";
-      clock-frequency = <160000000>;
+    SERIAL0: rvcomp-uart@10000000 {
+      compatible = "isct,rvcomp-uart";
+      clock-frequency = <150000000>;
       interrupt-parent = <&PLIC>;
       interrupts = <1>;
       reg = <0x0 0x10000000 0x0 0x10>;
       reg-shift = <0x0>;
       reg-io-width = <0x1>;
+    };
+    mmc@a0000000 {
+      compatible = "isct,rvcomp-mmc";
+      reg = <0x0 0xa0000000 0x0 0x2000>;
+      rootfs-offset = <0x2000000>;   /* 32 MiB */
+      disk-size-mb = <7168>;         /* 7 GiB (8GB MMC) */
+      status = "okay";
+    };
+    ethernet@14000000 {
+      compatible = "isct,rvcomp-ethernet";
+      reg = <0x0 0x14000000 0x0 0x00004000>,
+            <0x0 0x18000000 0x0 0x00004000>,
+            <0x0 0x1c000000 0x0 0x00002000>;
+      reg-names = "csr", "rxbuf", "txbuf";
+      interrupt-parent = <&PLIC>;
+      interrupts = <2>;
+      interrupt-names = "ethernet";
+      local-mac-address = [AA BB CC DD EE FF];
+      status = "okay";
     };
   };
 };

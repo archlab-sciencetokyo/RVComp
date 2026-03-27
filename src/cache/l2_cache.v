@@ -177,7 +177,7 @@ module l2_cache #(
             IDLE        : begin
                 if (cpu_arvalid_i) begin
                     is_load_d       = 1'b1                                          ;
-                    if (cpu_araddr_i[ADDR_WIDTH-1:28]<'h8) begin                    // peripheral access
+                    if ((|cpu_araddr_i[`PLEN-1:24]==1'b1) && cpu_araddr_i[ADDR_WIDTH-1:28] != 'h8) begin  // peripheral access
                         bus_arvalid_d   = 1'b1                                      ;
                         bus_araddr_d    = cpu_araddr_i                              ;
                         state_d         = PERIPH_READ                               ;
@@ -188,7 +188,7 @@ module l2_cache #(
                     end
                 end else if (cpu_wvalid_i) begin
                     is_store_d      = 1'b1                                          ;
-                    if (cpu_awaddr_i[ADDR_WIDTH-1:28]<'h8) begin                    // peripheral access
+                    if ((|cpu_awaddr_i[`PLEN-1:24]==1'b1) && cpu_awaddr_i[ADDR_WIDTH-1:28] != 'h8) begin  // peripheral access
                         bus_wvalid_d    = 1'b1                                      ;
                         bus_awaddr_d    = cpu_awaddr_i                              ;
                         bus_wdata_d     = cpu_wdata_i                               ;

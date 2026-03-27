@@ -16,11 +16,11 @@
 `define START_PC                    'h80000000
 
 `define DRAM_BASE                   'h80000000
-`ifdef DDR2
+`ifdef NEXYS // 
     `define DRAM_SIZE               (128*1024*1024) // Nexys
 `else // DDR3
     `define DRAM_SIZE               (256*1024*1024) // Arty
-`endif // DDR2
+`endif
 `define UART_BASE                   'h10000000
 
 `define SIG_ADDR                    'h7ffffff8
@@ -74,10 +74,29 @@
 `define UART_DATA_WIDTH             32
 `define UART_STRB_WIDTH             (`UART_DATA_WIDTH/8)
 
+// ether
+`define ETHER_ADDR_WIDTH            32
+`define ETHER_DATA_WIDTH            32
+`define ETHER_STRB_WIDTH            (`ETHER_DATA_WIDTH/8)
+`define ETHER_MTU                   1514 // 6 (dst) + 6 (src) + 2 (type) + 1500 (data)
+`define ETHER_CSR_BASE              'h14000000
+`define ETHER_CSR_SIZE              (16*1024)
+`define ETHER_RXBUF_BASE            'h18000000
+`define ETHER_TXBUF_BASE            'h1c000000
+
+
 // dram
 `define DRAM_ADDR_WIDTH             $clog2(`DRAM_SIZE)
 `define DRAM_DATA_WIDTH             128
 `define DRAM_STRB_WIDTH             (`DRAM_DATA_WIDTH/8)
+
+// sdcram
+`define SDCRAM_BASE                 'ha0000000
+`define SDCRAM_SIZE                 (1536*1024*1024) // 1.5 GiB (0xa0000000-0xffffffff)
+`define SDCRAM_ADDR_WIDTH           32
+`define SDCRAM_DATA_WIDTH           32
+`define SDCRAM_STRB_WIDTH           (`SDCRAM_DATA_WIDTH/8)
+`define SD_ADDR_WIDTH               41
 
 // instruction type
 `define NONE_TYPE                   0

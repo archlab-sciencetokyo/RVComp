@@ -16,3 +16,6 @@ wait_on_run synth_1
 
 launch_runs impl_1 -to_step write_bitstream -jobs $nproc
 wait_on_run impl_1
+
+source [file join [file dirname [info script]] check_build.tcl]
+check_build_result [glob -nocomplain "[file dirname $XPR_PATH]/*.runs/impl_1/runme.log"]

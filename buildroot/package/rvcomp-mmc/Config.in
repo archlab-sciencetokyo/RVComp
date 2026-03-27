@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+
+config BR2_PACKAGE_RVCOMP_MMC
+	bool "rvcomp-mmc"
+	depends on BR2_LINUX_KERNEL
+	help
+	  MMC block device driver for RVCOMP SoC.
+
+	  This driver supports the custom MMC controller used in the
+	  RVComp RISC-V SoC, exposing it as a Linux block device.
+
+	  https://archlab-sciencetokyo.github.io/RVComp-doc
