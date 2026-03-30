@@ -6,13 +6,11 @@ If you want to read the document, please visit the [RVComp Documentation Pages](
 [Demo](https://archlab-sciencetokyo.github.io/RVComp-doc/intro/demo.html) is here.
 
 ## Overview
-RVComp is a RISC-V SoC (System on Chip) with a five-stage pipeline. It supports the RV32IMASU_Zicntr_Zicsr_Zifencei instruction set, including privileged modes and the Sv32 virtual memory system, so it can run Linux. The RVComp project began in June 2024 and offers the following characteristics:
+RVComp is a RISC-V SoC (System-on-Chip) featuring a five-stage pipeline. It supports the RV32IMA_Zicntr_Zicsr_Zifencei instruction set, along with M-, S-, and U-modes, the privileged architecture, and the Sv32 virtual memory system, enabling it to run Linux. The RVComp project began in June 2024 and offers the following characteristics:
 
-- **High operating frequency**: Achieves a maximum clock frequency of **170 MHz** (Version 1.0.0.0) on a Nexys A7-100T (XC7A100T-1CSG324C)
+- **High operating frequency**: Achieves a maximum clock frequency of **170 MHz** (Version 1.0.0) on a Nexys A7-100T (XC7A100T-1CSG324C)
 - **HDL implementation**: RVComp is described in Verilog HDL with a from-scratch design except for the DRAM controller and clock generation
 - **Permissive licensing**: All HDL components except IP are provided under the MIT license
-
-
 - **Ethernet support**: 100 Mbps Ethernet controller with RMII (Nexys 4 DDR) and MII (Arty A7) interfaces, including hardware MAC filtering and FCS computation
 - **microSD boot support**: microSD controller enabling Linux to boot and operate from a microSD card on the Nexys 4 DDR board
 - **Interactive configuration**: Various SoC parameters can be configured through a terminal-based GUI (`tools/setting.py`)
