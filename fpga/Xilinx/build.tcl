@@ -14,17 +14,24 @@ set SRC_FILES       [lrange $argv 8 end]
 set nproc           [exec nproc]
 
 set file [open "$RVCOMP_PATH/src/config.vh"]
-if {[regexp {`define\s+CLK_FREQ_MHZ\s+\(([0-9]+)\s*\)} [read $file] -> freq]} {
-    puts "Found frequency: $freq MHz"
-} else {
-    puts "CLK_FREQ_MHZ not found in config.vh"
-    close $file
-    exit 1
-}
+set config_vh [read $file]
 close $file
 
+if {[regexp {`define\s+CLK_FREQ_MHZ\s*\(\s*([0-9]+)\s*\)} $config_vh -> freq]} {
+  puts "Found frequency: $freq MHz"
+} else {
+  puts "CLK_FREQ_MHZ not found in config.vh"
+  exit 1
+}
 
-
+if {[regexp -line {^\s*`define\s+NEXYS} $config_vh]} {
+  set eth_if_mode "RMII"
+  set refclk_freq 50.0
+} else {
+  set eth_if_mode "MII"
+  set refclk_freq 25.0
+}
+puts "Ethernet mode from config.vh: $eth_if_mode, REFCLK: [format %.6f $refclk_freq] MHz"
 set_param board.repoPaths [list "$BOARD_DATA_PATH"]
 create_project $PROJECT_NAME $PROJECT_PATH/$PROJECT_NAME -part $BOARD_PART -force
 
@@ -200,6 +207,7 @@ create_ip_run [get_files -of_objects [get_fileset sources_1] $PROJECT_PATH/$PROJ
 launch_runs mig_7series_0_synth_1 -jobs $nproc
 wait_on_run mig_7series_0_synth_1
 export_simulation -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/mig_7series_0/mig_7series_0.xci] -directory $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/sim_scripts -ip_user_files_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files -ipstatic_source_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/ipstatic -lib_map_path [list {modelsim=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/modelsim} {questa=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/questa} {xcelium=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/xcelium} {vcs=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/vcs} {riviera=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/riviera}] -use_ip_compiled_libs -force -quiet
+
 create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 -module_name clk_wiz_0
 set_property -dict [list \
   CONFIG.CLKOUT1_JITTER {118.758} \
@@ -241,6 +249,26 @@ create_ip_run [get_files -of_objects [get_fileset sources_1] $PROJECT_PATH/$PROJ
 launch_runs clk_wiz_1_synth_1 -jobs $nproc
 wait_on_run clk_wiz_1_synth_1
 export_simulation -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_1/clk_wiz_1.xci] -directory $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/sim_scripts -ip_user_files_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files -ipstatic_source_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/ipstatic -lib_map_path [list {modelsim=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/modelsim} {questa=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/questa} {xcelium=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/xcelium} {vcs=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/vcs} {riviera=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/riviera}] -use_ip_compiled_libs -force -quiet
+
+create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 -module_name clk_wiz_2
+set_property -dict [list \
+  CONFIG.NUM_OUT_CLKS {2}\
+  CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {50.000000}\
+  CONFIG.CLKOUT2_REQUESTED_OUT_FREQ [format %.6f $refclk_freq]\
+  CONFIG.CLKOUT2_REQUESTED_PHASE {-45.000}\
+  CONFIG.CLKOUT2_USED {true}\
+  CONFIG.PRIM_IN_FREQ {100.00000} \
+] [get_ips clk_wiz_2]
+# Clock Settings End
+generate_target {instantiation_template} [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci]
+generate_target all [get_files  $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci]
+catch { config_ip_cache -export [get_ips -all clk_wiz_2] }
+export_ip_user_files -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci] -no_script -sync -force -quiet
+create_ip_run [get_files -of_objects [get_fileset sources_1] $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci]
+launch_runs clk_wiz_2_synth_1 -jobs $nproc
+wait_on_run clk_wiz_2_synth_1
+export_simulation -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci] -directory $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/sim_scripts -ip_user_files_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files -ipstatic_source_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/ipstatic -lib_map_path [list {modelsim=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/modelsim} {questa=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/questa} {xcelium=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/xcelium} {vcs=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/vcs} {riviera=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/riviera}] -use_ip_compiled_libs -force -quiet
+
 add_files -norecurse $SRC_FILES
 add_files -fileset constrs_1 -norecurse $CONSTR_PATH
 update_compile_order -fileset sources_1
@@ -250,3 +278,5 @@ reset_run synth_1
 launch_runs impl_1 -to_step write_bitstream -jobs $nproc
 wait_on_run impl_1
 
+source [file join [file dirname [info script]] check_build.tcl]
+check_build_result "$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.runs/impl_1/runme.log"

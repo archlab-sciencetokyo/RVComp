@@ -8,14 +8,14 @@
 
 # User Setting Paths
 # For Simulation
-
+RISCV_PATH          :=
 # For FPGA
 vivado              := vivado                 # vivado path
-board_data_path     :=                        # board data path
 serial_number       :=                        # serial number
 ip_address          :=                        # ip address
-BAUD_RATE		    := 32000000               # baud rate for pyserial
+BAUD_RATE		    := 3000000               # baud rate for pyserial
 COM_PORT		    := /dev/ttyUSB1           # serial port for pyserial
+board_data_path     := $(shell pwd)/tools/XilinxBoardStore  # board data path
 
 
 DISPLAY_CYCLES      := 100000000 # display . every n cycles
@@ -87,6 +87,8 @@ srcs                += $(wildcard $(src_dir)/clint/*.v)
 srcs                += $(wildcard $(src_dir)/plic/*.v)
 srcs                += $(wildcard $(src_dir)/uart/*.v)
 srcs                += $(wildcard $(src_dir)/dram/*.v)
+srcs                += $(wildcard $(src_dir)/sdcram/*.v)
+srcs                += $(wildcard $(src_dir)/ether/*.v)
 inc_dir             += $(src_dir)
 configs             := $(wildcard $(src_dir)/*.vh)
 
@@ -101,6 +103,7 @@ embench_dir         := $(prog_dir)/embench-iot
 rvtest_dir          := $(prog_dir)/rvtest
 
 ### linux
+BIN_SIZE            ?= 32*1024*1024           # binary size for no uart boot (default: 32MB, max: 128MB)
 fw_jump_dir         :=
 kernel_dir          :=
 initrd_dir          :=
@@ -149,7 +152,6 @@ else ifeq (1, $(ARTY_A7))
 	project_name        := arty_a7
 	board_part          := xc7a35ticsg324-1L
 	device              := xc7a35t_0
-	serial_number       := 210319B268BEA  # arty_a7
 endif
 
 pyserial_flags        := --linux-boot --linux-file-path $(linux_image)
@@ -236,12 +238,16 @@ vivado_build_flags  += $(srcs) $(configs)
 vivado_rebuild_flags:= -mode batch -source $(vivado_rebuild_tcl)
 vivado_rebuild_flags+= -tclargs $(xrppath) 
 
+vivado_reclock_tcl  ?= $(rvcomp_path)/fpga/Xilinx/reclock.tcl
+vivado_reclock_flags:= -mode batch -source $(vivado_reclock_tcl)
+vivado_reclock_flags+= -tclargs $(rvcomp_path) $(xrppath) $(project_path) $(project_name)
+
 vivado_remote_flags   := -mode batch -source $(vivado_remote_tcl)
 vivado_remote_flags   += -tclargs $(project_path) $(project_name) $(ip_address) 
 vivado_remote_flags   += $(serial_number) $(bitstream) $(device)
 
 vivado_load_flags   := -mode batch -source $(vivado_local_tcl)
-vivado_load_flags   += -tclargs $(project_path) $(project_name) $(bitstream) $(device)
+vivado_load_flags   += -tclargs $(project_path) $(project_name) $(bitstream) $(device) $(serial_number)
 
 #===============================================================================
 # UV
@@ -310,7 +316,11 @@ vivadoclean:
 		);                                     \
 	fi
 
-distclean: clean progclean vivadoclean
+toolclean:
+	-rm -rf tools/__pycache__
+	-rm -rf tools/.venv
+
+distclean: clean progclean vivadoclean toolclean
 
 #===============================================================================
 # result-template
@@ -327,7 +337,7 @@ $2: $3 $$(log_dir) $$(diff_dir)
 	@echo --------------------------------------------------------------------------------
 	@echo spike
 	@echo ------------------------------------------------------------
-	$$(spike) --isa=rv32ima_zicntr_zicsr_zifencei --misaligned --log-commits --log="$$(log_dir)/$$@_spike_commit.log" "$3/$$@.elf"
+	$$(spike) --isa=rv32ima_zicntr_zicsr_zifencei --log-commits --log="$$(log_dir)/$$@_spike_commit.log" "$3/$$@.elf"
 	@sed -i '1,5d' "$$(log_dir)/$$@_spike_commit.log"
 	@echo ------------------------------------------------------------
 	@echo
@@ -531,6 +541,11 @@ rebit:
 	make bootrom
 	$(vivado) $(vivado_rebuild_flags)
 
+reclockbit:
+	make -C $(bootrom_dir) clean
+	make bootrom
+	$(vivado) $(vivado_reclock_flags)
+
 load:
 	$(vivado) $(vivado_load_flags)
 
@@ -545,5 +560,11 @@ term:
 
 config:
 	$(uv) $(uv_flags) $(pyserial_flags) --bitstream-load local
+
+menuconfig:
+	uv run --project $(pyserial_path) setting
+
+cliconfig:
+	uv run --project $(pyserial_path) cliconfig $(ARGS)
 
 #===============================================================================

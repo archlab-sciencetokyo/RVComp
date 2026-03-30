@@ -1,0 +1,52 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+#
+# Common initramfs dispatcher for RVCOMP.
+
+set -u
+
+HOOK_DIR="/etc/rvcomp/initramfs.d"
+SWITCH_ROOT_REQ="/.rvcomp-switch-root"
+
+echo "[init] mounting devtmpfs, proc, sysfs"
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+rm -f "${SWITCH_ROOT_REQ}"
+
+if [ -d "${HOOK_DIR}" ]; then
+    for hook in "${HOOK_DIR}"/S*; do
+        [ -f "${hook}" ] || continue
+        [ -x "${hook}" ] || continue
+
+        echo "[init] running hook: ${hook##*/}"
+        "${hook}"
+        hook_rc=$?
+        if [ "${hook_rc}" -ne 0 ]; then
+            echo "[init] hook failed: ${hook##*/} (rc=${hook_rc})"
+        elif [ -f "${SWITCH_ROOT_REQ}" ]; then
+            set -- $(cat "${SWITCH_ROOT_REQ}" 2>/dev/null)
+            new_root="${1:-}"
+            new_init="${2:-}"
+            rm -f "${SWITCH_ROOT_REQ}"
+
+            if [ -z "${new_root}" ] || [ -z "${new_init}" ]; then
+                echo "[init] switch_root request invalid"
+                break
+            fi
+
+            echo "[init] switch_root to ${new_root}"
+            mount -o move /dev "${new_root}/dev" 2>/dev/null || echo "[init] mount move /dev failed"
+            mount -o move /proc "${new_root}/proc" 2>/dev/null || echo "[init] mount move /proc failed"
+            mount -o move /sys "${new_root}/sys" 2>/dev/null || echo "[init] mount move /sys failed"
+            exec switch_root "${new_root}" "${new_init}"
+            echo "[init] switch_root failed"
+            exit 1
+        fi
+    done
+fi
+
+echo "[init] falling back to initramfs"
+exec /sbin/init

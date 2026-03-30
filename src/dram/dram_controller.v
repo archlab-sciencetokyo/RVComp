@@ -25,8 +25,10 @@ module dram_controller #(
     input  wire                    rst_ni               , // reset X
     input  wire                    clk_bufg_i           , // buffered clock
     input  wire                    soc_clk_i            , // soc clock (CLK_FREQ_MHZ MHz)
+    input  wire                    soft_rst_i           , // soft reset for controller front-end
     output wire                    ui_rst_o             , // reset from MIG
     input  wire                    locked_1_i           , // locked from PLL
+    input  wire                    locked_2_i           , // locked from PLL
     output wire                    rst_o                , // reset output
     input  wire                    wvalid_i             , // write request valid
     output wire                    wready_o             , // write request ready
@@ -43,7 +45,7 @@ module dram_controller #(
     input  wire                    rready_i             , // read response ready
     output wire   [DATA_WIDTH-1:0] rdata_o              , // read response data
     output wire [`RRESP_WIDTH-1:0] rresp_o              , // read response status
-`ifdef DDR2 // Nexys
+`ifdef NEXYS // Nexys
     output wire             [12:0] ddr2_addr            , // address
     output wire              [2:0] ddr2_ba              , // bank address
     output wire                    ddr2_cas_n           , // column address strobe
@@ -119,9 +121,21 @@ module dram_controller #(
 
     synchronizer sync_rst_o (
         .clk_i                  (soc_clk_i                                              ), // input  wire
-        .d_i                    (ui_rst || !locked_1_i                                  ), // input  wire
+        .d_i                    (ui_rst || !locked_1_i || !locked_2_i                   ), // input  wire
         .q_o                    (rst_o                                                  )  // output wire
     );
+
+    wire soft_rst_ui;
+    synchronizer sync_soft_rst_ui (
+        .clk_i                  (ui_clk                                                 ), // input  wire
+        .d_i                    (soft_rst_i                                             ), // input  wire
+        .q_o                    (soft_rst_ui                                            )  // output wire
+    );
+
+    wire front_rst_soc;
+    wire front_rst_ui;
+    assign front_rst_soc = rst_o || soft_rst_i;
+    assign front_rst_ui  = ui_rst || soft_rst_ui;
 
 //==============================================================================
 
@@ -155,8 +169,8 @@ module dram_controller #(
     ) req_fifo (
         .wclk_i                 (soc_clk_i              ), // input  wire
         .rclk_i                 (ui_clk                 ), // input  wire
-        .wrst_i                 (rst_o                  ), // input  wire
-        .rrst_i                 (ui_rst                 ), // input  wire
+        .wrst_i                 (front_rst_soc          ), // input  wire
+        .rrst_i                 (front_rst_ui           ), // input  wire
         .wvalid_i               (req_fifo_wvalid        ), // input  wire
         .wready_o               (req_fifo_wready        ), // output wire
         .wdata_i                (req_fifo_wdata         ), // input  wire [DATA_WIDTH-1:0]
@@ -195,8 +209,8 @@ module dram_controller #(
     ) rsp_fifo (
         .wclk_i                 (ui_clk                 ), // input  wire
         .rclk_i                 (soc_clk_i              ), // input  wire
-        .wrst_i                 (ui_rst                 ), // input  wire
-        .rrst_i                 (rst_o                  ), // input  wire
+        .wrst_i                 (front_rst_ui           ), // input  wire
+        .rrst_i                 (front_rst_soc          ), // input  wire
         .wvalid_i               (rsp_fifo_wvalid        ), // input  wire
         .wready_o               (rsp_fifo_wready        ), // output wire
         .wdata_i                (rsp_fifo_wdata         ), // input  wire [DATA_WIDTH-1:0]
@@ -237,9 +251,11 @@ module dram_controller #(
     wire                        dram_arvalid    ;
     wire                        dram_arready    ;
     wire       [ADDR_WIDTH-1:0] dram_araddr     ;
+    wire                        req_is_read     ;
 
     assign dram_arvalid     = req_fifo_rvalid && (req_fifo_rdata[0]==1'b1)                          ;
     assign dram_araddr      = {req_fifo_rdata[REQ_FIFO_ADDR_MSB:REQ_FIFO_ADDR_LSB], 4'h0}           ;
+    assign req_is_read      = req_fifo_rdata[0]                                                      ;
 
     // read data channel
     wire                        dram_rvalid     ;
@@ -249,7 +265,9 @@ module dram_controller #(
     wire                  [1:0] dram_rresp      ;
     wire                        dram_rlast      ;
 
-    assign req_fifo_rready  = dram_arready && dram_awready && dram_wready                           ;
+    assign req_fifo_rready  = req_fifo_rvalid &&
+                              ((req_is_read && dram_arready) ||
+                              (!req_is_read && dram_awready && dram_wready))                         ;
 
     assign rsp_fifo_wvalid  = dram_bvalid || dram_rvalid                                            ;
     assign dram_rready      = rsp_fifo_wready                                                       ;
@@ -259,7 +277,7 @@ module dram_controller #(
     wire app_sr_active, app_ref_ack, app_zq_ack;
     mig_7series_0 u_mig_7series_0 (
         // Memory interface ports
-`ifdef DDR2 // Nexys
+`ifdef NEXYS // Nexys
         .ddr2_addr              (ddr2_addr              ), // output  [12:0] ddr2_addr
         .ddr2_ba                (ddr2_ba                ), // output   [2:0] ddr2_ba
         .ddr2_cas_n             (ddr2_cas_n             ), // output         ddr2_cas_n

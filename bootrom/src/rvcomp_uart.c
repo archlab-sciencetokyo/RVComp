@@ -1,10 +1,10 @@
 /*
  * SPDX-License-Identifier: MIT
  * 
- * Copyright (c) 2025 Archlab, Science Tokyo
+ * Copyright (c) 2026 Archlab, Science Tokyo
  */
  
-#include "rvcom_uart.h"
+#include "rvcomp_uart.h"
 
 #include <stdint.h>
 
@@ -37,4 +37,13 @@ int uart_getc(void) {
 
 void uart_puts(char *str) {
     while (*str!='\0') uart_putc(*str++);
+}
+
+void printIntAsHex(uint32_t value) {
+    uart_puts("0x");
+    for (int i = 28; i >= 0; i -= 4) {
+        uint8_t nibble = (value >> i) & 0xF;
+        uart_putc("0123456789ABCDEF"[nibble]);
+    }
+    uart_puts("\r\n");
 }

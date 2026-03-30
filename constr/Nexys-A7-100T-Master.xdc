@@ -10,8 +10,8 @@
 #resize_pblock [get_pblocks pb0] -add {CLOCKREGION_X0Y0:CLOCKREGION_X0Y0};
 
 ## Clock signal
-set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports {clk_i}];
-create_clock -period 10.00 -name sys_clk_pin -waveform {0.000 5.000} -add [get_ports {clk_i}];
+set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports clk_i]
+create_clock -period 10.000 -name sys_clk_pin -waveform {0.000 5.000} -add [get_ports clk_i]
 
 ##Switches
 #set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { SW[0] }]; #IO_L24N_T3_RS0_15 Sch=sw[0]
@@ -76,7 +76,7 @@ create_clock -period 10.00 -name sys_clk_pin -waveform {0.000 5.000} -add [get_p
 #set_property -dict { PACKAGE_PIN U13   IOSTANDARD LVCMOS33 } [get_ports { AN[7] }]; #IO_L23N_T3_A02_D18_14 Sch=an[7]
 
 ##CPU Reset Button
-set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports rst_ni];
+set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports rst_ni]
 
 ##Buttons
 #set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { BTNC }]; #IO_L9P_T1_DQS_14 Sch=btnc
@@ -154,14 +154,14 @@ set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports rst_ni];
 #set_property -dict { PACKAGE_PIN B12   IOSTANDARD LVCMOS33 } [get_ports { VGA_VS }]; #IO_L3N_T0_DQS_AD1N_15 Sch=vga_vs
 
 ##Micro SD Connector
-#set_property -dict { PACKAGE_PIN E2    IOSTANDARD LVCMOS33 } [get_ports { SD_RESET }]; #IO_L14P_T2_SRCC_35 Sch=sd_reset
-#set_property -dict { PACKAGE_PIN A1    IOSTANDARD LVCMOS33 } [get_ports { SD_CD }]; #IO_L9N_T1_DQS_AD7N_35 Sch=sd_cd
-#set_property -dict { PACKAGE_PIN B1    IOSTANDARD LVCMOS33 } [get_ports { SD_SCK }]; #IO_L9P_T1_DQS_AD7P_35 Sch=sd_sck
-#set_property -dict { PACKAGE_PIN C1    IOSTANDARD LVCMOS33 } [get_ports { SD_CMD }]; #IO_L16N_T2_35 Sch=sd_cmd
-#set_property -dict { PACKAGE_PIN C2    IOSTANDARD LVCMOS33 } [get_ports { SD_DAT[0] }]; #IO_L16P_T2_35 Sch=sd_dat[0]
-#set_property -dict { PACKAGE_PIN E1    IOSTANDARD LVCMOS33 } [get_ports { SD_DAT[1] }]; #IO_L18N_T2_35 Sch=sd_dat[1]
-#set_property -dict { PACKAGE_PIN F1    IOSTANDARD LVCMOS33 } [get_ports { SD_DAT[2] }]; #IO_L18P_T2_35 Sch=sd_dat[2]
-#set_property -dict { PACKAGE_PIN D2    IOSTANDARD LVCMOS33 } [get_ports { SD_DAT[3] }]; #IO_L14N_T2_SRCC_35 Sch=sd_dat[3]
+set_property -dict {PACKAGE_PIN E2 IOSTANDARD LVCMOS33} [get_ports sd_rst]
+set_property -dict {PACKAGE_PIN A1 IOSTANDARD LVCMOS33} [get_ports sd_cd]
+set_property -dict {PACKAGE_PIN B1 IOSTANDARD LVCMOS33} [get_ports sd_sclk]
+set_property -dict {PACKAGE_PIN C1 IOSTANDARD LVCMOS33} [get_ports sd_cmd]
+set_property -dict {PACKAGE_PIN C2 IOSTANDARD LVCMOS33} [get_ports {sd_dat[0]}]
+set_property -dict {PACKAGE_PIN E1 IOSTANDARD LVCMOS33} [get_ports {sd_dat[1]}]
+set_property -dict {PACKAGE_PIN F1 IOSTANDARD LVCMOS33} [get_ports {sd_dat[2]}]
+set_property -dict {PACKAGE_PIN D2 IOSTANDARD LVCMOS33} [get_ports {sd_dat[3]}]
 
 ##Accelerometer
 #set_property -dict { PACKAGE_PIN E15   IOSTANDARD LVCMOS33 } [get_ports { ACL_MISO }]; #IO_L11P_T1_SRCC_15 Sch=acl_miso
@@ -187,8 +187,8 @@ set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports rst_ni];
 #set_property -dict { PACKAGE_PIN D12   IOSTANDARD LVCMOS33 } [get_ports { AUD_SD }]; #IO_L6P_T0_15 Sch=aud_sd
 
 ##USB-RS232 Interface
-set_property -dict {PACKAGE_PIN C4 IOSTANDARD LVCMOS33} [get_ports {rxd_i}];
-set_property -dict {PACKAGE_PIN D4 IOSTANDARD LVCMOS33} [get_ports {txd_o}];
+set_property -dict {PACKAGE_PIN C4 IOSTANDARD LVCMOS33} [get_ports rxd_i]
+set_property -dict {PACKAGE_PIN D4 IOSTANDARD LVCMOS33} [get_ports txd_o]
 #set_property -dict { PACKAGE_PIN D3    IOSTANDARD LVCMOS33 } [get_ports { UART_CTS }]; #IO_L12N_T1_MRCC_35 Sch=uart_cts
 #set_property -dict { PACKAGE_PIN E5    IOSTANDARD LVCMOS33 } [get_ports { UART_RTS }]; #IO_L5N_T0_AD13N_35 Sch=uart_rts
 
@@ -197,18 +197,44 @@ set_property -dict {PACKAGE_PIN D4 IOSTANDARD LVCMOS33} [get_ports {txd_o}];
 #set_property -dict { PACKAGE_PIN B2    IOSTANDARD LVCMOS33 } [get_ports { PS2_DATA }]; #IO_L10N_T1_AD15N_35 Sch=ps2_data
 
 ##SMSC Ethernet PHY
-#set_property -dict { PACKAGE_PIN C9    IOSTANDARD LVCMOS33 } [get_ports { ETH_MDC }]; #IO_L11P_T1_SRCC_16 Sch=eth_mdc
-#set_property -dict { PACKAGE_PIN A9    IOSTANDARD LVCMOS33 } [get_ports { ETH_MDIO }]; #IO_L14N_T2_SRCC_16 Sch=eth_mdio
-#set_property -dict { PACKAGE_PIN B3    IOSTANDARD LVCMOS33 } [get_ports { ETH_RSTN }]; #IO_L10P_T1_AD15P_35 Sch=eth_rstn
-#set_property -dict { PACKAGE_PIN D9    IOSTANDARD LVCMOS33 } [get_ports { ETH_CRSDV }]; #IO_L6N_T0_VREF_16 Sch=eth_crsdv
-#set_property -dict { PACKAGE_PIN C10   IOSTANDARD LVCMOS33 } [get_ports { ETH_RXERR }]; #IO_L13N_T2_MRCC_16 Sch=eth_rxerr
-#set_property -dict { PACKAGE_PIN C11   IOSTANDARD LVCMOS33 } [get_ports { ETH_RXD[0] }]; #IO_L13P_T2_MRCC_16 Sch=eth_rxd[0]
-#set_property -dict { PACKAGE_PIN D10   IOSTANDARD LVCMOS33 } [get_ports { ETH_RXD[1] }]; #IO_L19N_T3_VREF_16 Sch=eth_rxd[1]
-#set_property -dict { PACKAGE_PIN B9    IOSTANDARD LVCMOS33 } [get_ports { ETH_TXEN }]; #IO_L11N_T1_SRCC_16 Sch=eth_txen
-#set_property -dict { PACKAGE_PIN A10   IOSTANDARD LVCMOS33 } [get_ports { ETH_TXD[0] }]; #IO_L14P_T2_SRCC_16 Sch=eth_txd[0]
-#set_property -dict { PACKAGE_PIN A8    IOSTANDARD LVCMOS33 } [get_ports { ETH_TXD[1] }]; #IO_L12N_T1_MRCC_16 Sch=eth_txd[1]
-#set_property -dict { PACKAGE_PIN D5    IOSTANDARD LVCMOS33 } [get_ports { ETH_REFCLK }]; #IO_L11P_T1_SRCC_35 Sch=eth_refclk
-#set_property -dict { PACKAGE_PIN B8    IOSTANDARD LVCMOS33 } [get_ports { ETH_INTN }]; #IO_L12P_T1_MRCC_16 Sch=eth_intn
+set_property -dict {PACKAGE_PIN C9 IOSTANDARD LVCMOS33} [get_ports eth_mdc]
+set_property -dict {PACKAGE_PIN A9 IOSTANDARD LVCMOS33} [get_ports eth_mdio]
+set_property -dict {PACKAGE_PIN B3 IOSTANDARD LVCMOS33} [get_ports eth_rstn]
+set_property -dict {PACKAGE_PIN D9 IOSTANDARD LVCMOS33} [get_ports eth_crsdv]
+set_property -dict {PACKAGE_PIN C10 IOSTANDARD LVCMOS33} [get_ports eth_rxerr]
+set_property -dict {PACKAGE_PIN C11 IOSTANDARD LVCMOS33} [get_ports {eth_rxd[0]}]
+set_property -dict {PACKAGE_PIN D10 IOSTANDARD LVCMOS33} [get_ports {eth_rxd[1]}]
+set_property -dict {PACKAGE_PIN B9 IOSTANDARD LVCMOS33} [get_ports eth_txen]
+set_property -dict {PACKAGE_PIN A10 IOSTANDARD LVCMOS33} [get_ports {eth_txd[0]}]
+set_property -dict {PACKAGE_PIN A8 IOSTANDARD LVCMOS33} [get_ports {eth_txd[1]}]
+set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33} [get_ports eth_refclk]
+set_property -dict {PACKAGE_PIN B8 IOSTANDARD LVCMOS33} [get_ports eth_intn]
+
+# RMII Timing Constraints
+# RMII is a source-synchronous interface where the FPGA provides the 50MHz reference clock
+# and the PHY returns data aligned to that clock with some propagation delay.
+
+# Get the 50MHz clock used for RMII
+
+# Input delays for receive signals (from PHY to FPGA)
+# These represent the PHY's clock-to-output delays based on typical RMII PHY specs (e.g., LAN8720A)
+# tCO_max (worst case): ~14ns (PHY clock to output delay)
+# tCO_min (best case): ~0ns (minimum propagation delay)
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports {eth_rxd[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports {eth_rxd[*]}]
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports eth_crsdv]
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports eth_crsdv]
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports eth_rxerr]
+set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports eth_rxerr]
+
+# Output delays for transmit signals (from FPGA to PHY)
+# These represent the PHY's input requirements (setup and hold times)
+# tSU (setup time): 4ns - PHY needs data stable 4ns before clock edge
+# tH (hold time): 2ns - PHY needs data stable 2ns after clock edge
+set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 4.000 [get_ports {eth_txd[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min -2.000 [get_ports {eth_txd[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 4.000 [get_ports eth_txen]
+set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min -2.000 [get_ports eth_txen]
 
 ##Quad SPI Flash
 #set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[0] }]; #IO_L1P_T0_D00_MOSI_14 Sch=qspi_dq[0]
@@ -216,5 +242,6 @@ set_property -dict {PACKAGE_PIN D4 IOSTANDARD LVCMOS33} [get_ports {txd_o}];
 #set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[2] }]; #IO_L2P_T0_D02_14 Sch=qspi_dq[2]
 #set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[3] }]; #IO_L2N_T0_D03_14 Sch=qspi_dq[3]
 #set_property -dict { PACKAGE_PIN L13   IOSTANDARD LVCMOS33 } [get_ports { QSPI_CSN }]; #IO_L6P_T0_FCS_B_14 Sch=qspi_csn
+set_clock_groups -physically_exclusive -group [get_clocks clk_out1_clk_wiz_2] -group [get_clocks clk_out2_clk_wiz_2]
 
-set_clock_groups -asynchronous -group [list user_clock [get_clocks -of_objects [get_pins clk_wiz_1/inst/mmcm_adv_inst/CLKOUT0]]];
+set_clock_groups -asynchronous -group [list user_clock [get_clocks -of_objects [get_pins clk_wiz_1/inst/mmcm_adv_inst/CLKOUT0]]]

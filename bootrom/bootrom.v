@@ -18,6 +18,7 @@ module bootrom #(
     localparam STRB_WIDTH   = DATA_WIDTH/8    // strobe width
 ) (
     input  wire                    clk_i        , // clock
+    input  wire                    rst_i        , // reset
     input  wire                    arvalid_i    , // read request valid
     output wire                    arready_o    , // read request ready
     input  wire   [ADDR_WIDTH-1:0] araddr_i     , // read request address
@@ -52,10 +53,13 @@ module bootrom #(
     assign rresp_o      = `RRESP_OKAY               ;
 
     always @(posedge clk_i) begin
-        if (arready_o) begin
+        if (rst_i) begin
+            rvalid_o    <= 1'b0             ;
+            rdata_o     <= 'h0              ;
+        end else if (arready_o) begin
             rvalid_o    <= arvalid_i        ;
             if (arvalid_i) begin
-                rdata_o     <= rom[valid_araddr];
+                rdata_o <= rom[valid_araddr];
             end
         end
     end

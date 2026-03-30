@@ -338,6 +338,7 @@ module csr_regfile #(
         mip_d[`MIP_MTIP]    = timer_irq_i   ;
         mip_d[`MIP_MSIP]    = ipi_i         ;
         mip_d[`MIP_MEIP]    = irq_i[0]      ;
+        mip_d[`MIP_SEIP]    = irq_i[1]      ;
         deleg               = 1'b0          ;
         if (exc_valid_i) begin
             if (priv_lvl_q<=`PRIV_LVL_S) begin

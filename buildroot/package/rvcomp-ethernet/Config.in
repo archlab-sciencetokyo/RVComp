@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+
+config BR2_PACKAGE_RVCOMP_ETHERNET
+	bool "rvcomp-ethernet"
+	depends on BR2_LINUX_KERNEL
+	help
+	  Ethernet driver for RVCOMP SoC.
+
+	  This driver supports the custom Ethernet MAC used in the
+	  RVComp RISC-V SoC.
+
+	  https://archlab-sciencetokyo.github.io/RVComp-doc

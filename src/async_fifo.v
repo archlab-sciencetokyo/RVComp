@@ -38,13 +38,23 @@ module async_fifo #(
     wire [ADDR_WIDTH:0] gray_raddr = raddr_q ^ {1'b0, raddr_q[ADDR_WIDTH:1]};
 
     always @(posedge rclk_i) begin
-        gray_waddr1 <= gray_waddr   ;
-        gray_waddr2 <= gray_waddr1  ;
+        if (rrst_i) begin
+            gray_waddr1 <= 'h0;
+            gray_waddr2 <= 'h0;
+        end else begin
+            gray_waddr1 <= gray_waddr;
+            gray_waddr2 <= gray_waddr1;
+        end
     end
 
     always @(posedge wclk_i) begin
-        gray_raddr1 <= gray_raddr   ;
-        gray_raddr2 <= gray_raddr1  ;
+        if (wrst_i) begin
+            gray_raddr1 <= 'h0;
+            gray_raddr2 <= 'h0;
+        end else begin
+            gray_raddr1 <= gray_raddr;
+            gray_raddr2 <= gray_raddr1;
+        end
     end
 
     wire empty_n    = (gray_raddr!=gray_waddr2);

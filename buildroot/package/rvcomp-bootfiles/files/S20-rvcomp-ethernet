@@ -1,0 +1,45 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+#
+# Early Ethernet bring-up for initramfs.
+
+module_available() {
+    mod_name="$1"
+    mod_file="$(find /lib/modules -type f \( -name "${mod_name}.ko" -o -name "${mod_name}.ko.*" \) -print -quit 2>/dev/null)"
+    [ -n "${mod_file}" ]
+}
+
+detect_eth_interfaces() {
+    found=0
+    names=""
+
+    for net_path in /sys/class/net/eth*; do
+        [ -e "${net_path}" ] || continue
+        found=1
+        net_name="${net_path##*/}"
+        names="${names} ${net_name}"
+    done
+
+    if [ "${found}" -eq 1 ]; then
+        echo "[init] eth interfaces: ${names# }"
+    else
+        echo "[init] eth interfaces: not found"
+    fi
+}
+
+if ! module_available rvcomp_ethernet; then
+    echo "[init] rvcomp_ethernet module not present; skipping"
+    exit 0
+fi
+
+echo "[init] loading rvcomp_ethernet"
+if modprobe rvcomp_ethernet >/dev/null 2>&1; then
+    echo "[init] rvcomp_ethernet loaded"
+    detect_eth_interfaces
+else
+    echo "[init] rvcomp_ethernet modprobe failed"
+fi
+
+exit 0

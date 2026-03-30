@@ -128,8 +128,7 @@ module mmu (
     reg                        load_ptw_pending_q   , load_ptw_pending_d    ;
     reg                        load_pending_q       , load_pending_d        ;
 
-    wire data_periph_access = ((data_paddr_q[`PLEN-1:24]>'h0) && (data_paddr_q[`PLEN-1:28]<'h8));
-
+    wire data_periph_access = ((|data_paddr_q[`PLEN-1:24]==1'b1) && (data_paddr_q[`PLEN-1:28]!='h8));
     reg                        dtlb_ptw_req_q       , dtlb_ptw_req_d        ;
     wire           [`VLEN-1:0] dtlb_vaddr                                   ;
     wire                       dtlb_valid                                   ;

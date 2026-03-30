@@ -7,3 +7,6 @@
 [submodule "prog/embench-iot/embench-iot"]
 	path = prog/embench-iot/embench-iot
 	url = https://github.com/embench/embench-iot.git
+[submodule "tools/XilinxBoardStore"]
+	path = tools/XilinxBoardStore
+	url = https://github.com/Xilinx/XilinxBoardStore.git

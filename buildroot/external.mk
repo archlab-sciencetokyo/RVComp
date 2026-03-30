@@ -23,4 +23,4 @@ endef
 
 OPENSBI_POST_BUILD_HOOKS += OPENSBI_REBUILD_AFTER_BUILD
 
-
+include $(sort $(wildcard $(BR2_EXTERNAL_RVCOMP_PATH)/package/*/*.mk))

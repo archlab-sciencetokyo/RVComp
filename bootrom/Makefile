@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 #
-# Copyright (c) 2025 Archlab, Science Tokyo
+# Copyright (c) 2026 Archlab, Science Tokyo
 
 # User Settings
 RISCV_PATH          :=
@@ -13,7 +13,7 @@ objs                := $(call srcs-to-objs,$(srcs))
 
 bootloader_c        := $(src_dir)/bootloader.c
 
-dtb                 := rvcom.dtb
+dtb                 := rvcomp.dtb
 
 linker_ld           := $(src_dir)/linker.ld
 

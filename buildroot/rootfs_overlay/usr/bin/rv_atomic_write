@@ -1,0 +1,37 @@
+#!/bin/sh
+# Atomic-ish file replacement helper for BusyBox-based systems.
+#
+# Usage:
+#   rv_atomic_write <target_path> <src_file>
+#
+# The temp file is created in the target directory so rename stays atomic
+# within the same filesystem.
+
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <target_path> <src_file>" >&2
+    exit 1
+fi
+
+TARGET="$1"
+SRC="$2"
+DIR="$(dirname "$TARGET")"
+BASE="$(basename "$TARGET")"
+TMP="${DIR}/.${BASE}.tmp.$$"
+
+[ -f "$SRC" ] || { echo "error: source file not found: $SRC" >&2; exit 1; }
+[ -d "$DIR" ] || { echo "error: target directory not found: $DIR" >&2; exit 1; }
+
+cleanup() {
+    rm -f "$TMP"
+}
+trap cleanup EXIT INT TERM
+
+cp "$SRC" "$TMP"
+sync
+mv -f "$TMP" "$TARGET"
+sync
+
+trap - EXIT INT TERM
+echo "[rv_atomic_write] updated: $TARGET"

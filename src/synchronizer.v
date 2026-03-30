@@ -15,7 +15,9 @@ module synchronizer (
     output wire q_o       // data output
 );
 
-    reg ff1, ff2;
+    // Mark as CDC synchronizer flops for implementation tools.
+    (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO" *) reg ff1;
+    (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO" *) reg ff2;
     always @(posedge clk_i) begin
         ff1 <= d_i  ;
         ff2 <= ff1  ;

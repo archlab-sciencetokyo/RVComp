@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: MIT
  * 
- * Copyright (c) 2025 Archlab, Science Tokyo
+ * Copyright (c) 2026 Archlab, Science Tokyo
  */
  
     .equ DRAM_BASE  , 0x80000000
@@ -81,4 +81,4 @@ _start:
     .globl _dtb
     .align 5, 0
 _dtb:
-    .incbin "rvcom.dtb"
+    .incbin "rvcomp.dtb"
