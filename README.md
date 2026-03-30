@@ -6,13 +6,11 @@ If you want to read the document, please visit the [RVComp Documentation Pages](
 [Demo](https://archlab-sciencetokyo.github.io/RVComp-doc/intro/demo.html) is here.
 
 ## Overview
-RVComp is a RISC-V SoC (System on Chip) with a five-stage pipeline. It supports the RV32IMASU_Zicntr_Zicsr_Zifencei instruction set, including privileged modes and the Sv32 virtual memory system, so it can run Linux. The RVComp project began in June 2024 and offers the following characteristics:
+RVComp is a RISC-V SoC (System-on-Chip) featuring a five-stage pipeline. It supports the RV32IMA_Zicntr_Zicsr_Zifencei instruction set, along with M-, S-, and U-modes, the privileged architecture, and the Sv32 virtual memory system, enabling it to run Linux. The RVComp project began in June 2024 and offers the following characteristics:
 
 - **High operating frequency**: Achieves a maximum clock frequency of **170 MHz** (Version 1.0.0) on a Nexys A7-100T (XC7A100T-1CSG324C)
 - **HDL implementation**: RVComp is described in Verilog HDL with a from-scratch design except for the DRAM controller and clock generation
 - **Permissive licensing**: All HDL components except IP are provided under the MIT license
-
-
 - **Ethernet support**: 100 Mbps Ethernet controller with RMII (Nexys 4 DDR) and MII (Arty A7) interfaces, including hardware MAC filtering and FCS computation
 - **microSD boot support**: microSD controller enabling Linux to boot and operate from a microSD card on the Nexys 4 DDR board
 - **Interactive configuration**: Various SoC parameters can be configured through a terminal-based GUI (`tools/setting.py`)
@@ -53,141 +51,144 @@ The following components follow their respective licenses; see the LICENSE file 
   - Zifencei: instruction-fetch fences
 - **Virtual memory**: Sv32 (two-level page tables with 4 KB pages)
 
-# Demo
 
-A camera streaming demo running on RVComp. Source code is available in the [`feature/v1.1.0-demo`](https://github.com/archlab-sciencetokyo/RVComp/tree/feature/v1.1.0-demo) branch of the [RVComp](https://github.com/archlab-sciencetokyo/RVComp) repository.
+# Quick Start
 
-## Overview
+This section explains how to run RVComp on an FPGA board using a prebuilt bitstream and Linux image.
 
-This demo uses an [OV7670 (OmniVision)](https://www.ovt.com/press-releases/omnivision-launches-seventh-generation-vga-camerachip-for-mobile-applications/) camera module connected to a Nexys 4 DDR board. The camera captures 320×240 frames, converts them to 8-bit grayscale on the FPGA, and transmits them to a host PC over Ethernet. The demo runs on a local network (LAN).
 
-```
-OV7670 → FPGA (Gray8 capture) → Linux (cam_tx, UDP) → Host (relay.py, WebSocket) → Browser
-```
+Please download the following files from [the release page](https://github.com/archlab-sciencetokyo/RVComp/releases).
 
-## Demo Video
+**UART boot (Arty A7 35T or Nexys 4 DDR):**
+- `uart_fw_payload.bin`: Linux image file for UART boot
+- `uart_arty_a7.bit`: Bitstream for Arty A7 35T (UART boot)
+- `uart_nexys4ddr.bit`: Bitstream for Nexys 4 DDR (UART boot)
 
-The demo is filmed in a bright indoor environment. Because frames are encoded as 8-bit grayscale, good ambient lighting improves image quality.
+**MMC boot (Nexys 4 DDR only):**
+- `fw_payload.bin`: Linux image for MMC boot
+- `rootfs.ext4`: Root filesystem image for MMC boot
+- `mmc_nexys4ddr.bit`: Bitstream for Nexys 4 DDR (MMC boot)
 
-```{raw} html
-<video width="100%" controls>
-  <source src="../_static/media/demo.mp4" type="video/mp4">
-</video>
-```
-
-## Running the Demo
-
-### On RVComp (Linux)
-
-After booting Linux, assign an IP address and bring up the Ethernet interface:
-
-```sh
-$ ip addr add <IP_ADDRESS>/<PREFIX_LEN> dev eth0
-$ ip link set eth0 up
+```{note}
+MMC boot requires a microSD card inserted into the Nexys 4 DDR board's microSD slot.
+If an Ethernet cable is connected to the board, the network interface is available after boot.
 ```
 
-Then start the camera transmitter:
+**Common:**
+- `tools.zip`: Programs to communicate with the FPGA board via UART
 
-```sh
-$ cam_tx --host <HOST_IP_ADDRESS>
+Please unzip `tools.zip`.
+
+Please make sure the necessary tools and the FPGA board are ready:
+- {ref}`Vivado (2024.1 recommended) <vivado>`
+- {ref}`uv <uv>`
+- FPGA board (Nexys 4 DDR or Arty A7 35T)
+
+
+
+
+
+## UART Boot (Arty A7 35T or Nexys 4 DDR)
+
+1. Please connect the FPGA board to your PC.
+2. Please download and extract `uart_fw_payload.bin`, `uart_arty_a7.bit` (for Arty A7 35T) or `uart_nexys4ddr.bit` (for Nexys 4 DDR), and the `tools` directory from the archive mentioned above, and place them in the same directory.
+3. Please determine which serial port the USB connection is using. See [Checking the Serial Port](#checking-the-serial-port) below.
+4. Please open PowerShell (Windows) or a terminal (Linux) and change to the directory from step 2.
+5. Please run the following command, replacing `<port>` with the value from step 3. On success you should see `Port <port> opened successfully.`.
+   - Nexys 4 DDR: `cd tools && uv run term <port> 3000000 --linux-boot --linux-file-path ../uart_fw_payload.bin`
+   - Arty A7 35T: `cd tools && uv run term <port> 3000000 --linux-boot --linux-file-path ../uart_fw_payload.bin`
+6. Please launch Vivado and select **Open Hardware Manager → Open Target → Auto Connect → Program Device**.
+7. When prompted for the bitstream, please choose `uart_arty_a7.bit` if you use Arty A7, or `uart_nexys4ddr.bit` if you use Nexys 4 DDR, then click **Program**.
+8. The Linux image is transferred to the FPGA and boot begins. Once the login prompt appears, please log in as `root` (no password).
+9. To use Ethernet, configure the network interface:
+   ```sh
+   $ ip addr add <IP_ADDRESS>/<PREFIX_LEN> dev eth0
+   $ ip link set eth0 up
+   ```
+10. Please press `Ctrl+C`, then type `:q` to exit the serial console.
+
+
+
+
+
+## MMC Boot (Nexys 4 DDR only)
+
+MMC boot on Nexys 4 DDR requires a microSD card. The `mmc_fw_payload.bin` file is a combined binary containing the Linux image and root filesystem; it is written to the beginning of the microSD card. The serial terminal is still used as a console, but it does not send the Linux image in this mode.
+
+### Writing the microSD card
+
+Insert a microSD card into your host machine.
+
+**Linux:**
+
+Identify the block device node with `lsblk` or `dmesg`. **Verify the device node carefully before proceeding; writing to the wrong device will permanently destroy data on that device.**
+
+```bash
+$ sudo dd if=mmc_fw_payload.bin of=/dev/sdX bs=1M conv=fsync,notrunc status=progress
 ```
 
+Replace `/dev/sdX` with the actual device node of your microSD card (for example `/dev/sdb`). After the command completes, safely eject the card.
+
+**Windows (WSL):**
+
+Attach the microSD card to WSL, then use the same `dd` command as Linux above.
+
+- USB microSD card reader: follow [this guide (usbipd)](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) to bind the device to WSL.
+- Built-in card reader: follow [this guide (WSL2 disk mounting)](https://learn.microsoft.com/en-us/windows/wsl/wsl2-mount-disk) to mount the disk in WSL.
+
+### Booting from microSD card
+
+1. Insert the written microSD card into the microSD slot on the Nexys 4 DDR board.
+2. Connect the board to your PC via USB.
+3. Determine the serial port as described in [Checking the Serial Port](#checking-the-serial-port).
+4. Open a terminal and run the following command. No `--linux-boot` flag is **needed** because the serial tool is used only as a console in this mode:
+   ```bash
+   $ cd tools && uv run term <port> 3000000
+   ```
+5. Launch Vivado and program the board with `mmc_nexys4ddr.bit` using **Open Hardware Manager → Open Target → Auto Connect → Program Device**.
+6. The bootrom copies the Linux image from the microSD card into DRAM and boots Linux. The root filesystem on the microSD card is mounted as `/dev/mmcblk0`. Once the login prompt appears, log in as `root` (no password).
+7. To use Ethernet, configure the network interface:
+   ```sh
+   $ ip addr add <IP_ADDRESS>/<PREFIX_LEN> dev eth0
+   $ ip link set eth0 up
+   ```
+8. Press `Ctrl+C`, then type `:q` to exit the serial console.
+
+
+
+(checking-the-serial-port)=
+## Checking the Serial Port
+
+### Windows
+
+Please run the following command in PowerShell:
+
+```powershell
+Get-CimInstance Win32_PnPEntity | Where-Object { $_.Caption -match 'COM' } | Select-Object Caption, DeviceID
 ```
-Usage: cam_tx [--dev PATH] [--host IP] [--port N] [--payload N]
-Defaults: --dev /dev/rvcomp_cam0 --host 192.168.0.2 --port 5000 --payload 1200
+
+Please identify the entry whose `DeviceID` contains `FTDI`; this corresponds to the FPGA board. It appears in the form `USB Serial Device (COM*)`. Please note the COM port name.
+
+### WSL
+
+Please follow the instructions in [this article](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) to attach USB devices to WSL. Please run `usbipd list`; the entry with `VID:PID` of `0403:6010` is usually the FPGA board. After attaching it, please follow the Linux instructions below.
+
+### Linux
+
+Please run the following command in a terminal:
+
+```bash
+$ ls /dev/ttyUSB*
 ```
 
-### On the Host PC
+The available USB serial ports are listed. If only one FPGA board is connected as a USB serial device, it is typically `/dev/ttyUSB1`. When multiple USB serial devices are present, please run the command below for each port and look for a device where `ID_VENDOR` is `Digilent`:
 
-Run `relay.py` from `tools/camera/` using `uv`:
-
-```sh
-$ cd tools/camera
-$ uv run relay.py --port 5000 --ws-port 8000
+```bash
+$ udevadm info /dev/ttyUSB1 | grep ID_VENDOR=
 ```
 
-Then open `http://localhost:8000` in a browser to view the live camera stream.
+Please record the `/dev/ttyUSB*` path assigned to the FPGA board.
 
-```
-usage: relay.py [-h] [--udp-host UDP_HOST] [--udp-port UDP_PORT] [--ws-host WS_HOST] [--ws-port WS_PORT]
-
-RVComp camera relay
-
-options:
-  -h, --help            show this help message and exit
-  --udp-host UDP_HOST   UDP bind host
-  --udp-port UDP_PORT   UDP bind port
-  --ws-host WS_HOST     HTTP/WS bind host
-  --ws-port WS_PORT     HTTP/WS bind port
-```
-
-## System Configuration
-
-### External Pins
-
-The OV7670 is connected to the PMOD JA and JB headers on the Nexys 4 DDR board.
-
-| Signal            | Direction | Description |
-|:------------------|:----------|:------------|
-| `xclk`            | Output    | Camera input clock (25 MHz) |
-| `pclk`            | Input     | Pixel clock |
-| `camera_h_ref`    | Input     | Horizontal sync |
-| `camera_v_sync`   | Input     | Vertical sync |
-| `din[7:0]`        | Input     | 8-bit pixel data |
-| `sioc`            | Output    | I2C clock (SCCB) |
-| `siod`            | Inout     | I2C data (SCCB) |
-
-### Camera Driver
-
-An FPGA block captures frames from the OV7670 via I2C (SCCB). Pixel data is converted to 8-bit grayscale and stored in two frame buffers in BRAM (ping-pong). 8-bit grayscale was chosen because fitting two full-resolution color frame buffers in BRAM would exceed the available capacity.
-
-A Linux misc driver (`rvcomp-camera`) exposes the device as `/dev/rvcomp_cam0`. The driver accesses the camera hardware via MMIO polling (no IRQ). It supports `read`, `poll`, and `ioctl` (`RVCOMP_CAM_IOC_G_INFO`, `RVCOMP_CAM_IOC_G_META`).
-
-#### MMIO Map
-
-| Region         | Start         | End           | Description |
-|:---------------|:-------------:|:-------------:|:------------|
-| CSR            | `0xB000_0000` | `0xB000_0FFF` | Control and status registers |
-| Frame aperture | `0xB001_0000` | `0xB002_FFFF` | Ping-pong frame buffer window |
-
-#### CSR Map
-
-All CSRs are 32-bit wide.
-
-| Offset | Name               | Access | Description |
-|:------:|:-------------------|:------:|:------------|
-| 0x00   | `CAM_REG_ID`       | R      | Device ID |
-| 0x04   | `CAM_REG_CTRL`     | R/W    | Control (bit 0: capture enable) |
-| 0x08   | `CAM_REG_STATUS`   | R      | Status |
-| 0x0C   | `CAM_REG_WIDTH`    | R      | Image width in pixels |
-| 0x10   | `CAM_REG_HEIGHT`   | R      | Image height in pixels |
-| 0x14   | `CAM_REG_STRIDE`   | R      | Row stride in bytes |
-| 0x18   | `CAM_REG_FRAME_BYTES` | R   | Total frame size in bytes |
-| 0x1C   | `CAM_REG_SEQ`      | R      | Frame sequence counter |
-| 0x20   | `CAM_REG_READY_BANK` | R    | Bank holding the latest complete frame |
-| 0x24   | `CAM_REG_READ_BANK`  | R/W  | Bank selected for readout |
-| 0x28   | `CAM_REG_DROP_COUNT` | R    | Number of dropped frames |
-| 0x2C   | `CAM_REG_GAIN`     | R/W    | Gain control |
-
-### Transmission Program (`cam_tx`)
-
-`cam_tx` is a userspace program that reads frames from `/dev/rvcomp_cam0` and transmits them to the host as UDP datagrams. Each frame is split into chunks with a custom header (`RVCP` magic, sequence number, width, height, chunk index/count) to allow reassembly on the host.
-
-### Client Program (`relay.py`)
-
-`relay.py` runs on the host and acts as a relay between `cam_tx` and the browser. It listens for UDP datagrams from `cam_tx`, reassembles the frame chunks, and broadcasts each completed frame to all connected WebSocket clients. The browser connects to the WebSocket endpoint (`/ws`) and renders each frame on an HTML5 Canvas element.
-
-## Going Further
-
-The current implementation uses CPU-driven (PIO) reads from the BRAM frame buffer and UDP transmission, which limits the achievable frame rate.
-
-Since this runs on an FPGA, the hardware is fully reconfigurable. For example:
-
-- **DMA**: offload frame readout from the CPU entirely
-- **FPGA-side Ethernet framing**: generate UDP/IP headers in hardware and push frames to the MAC without CPU involvement
-- **Pipeline**: overlap capture and transmission in the FPGA fabric
-
-Changes that would require a full chip respin on an ASIC can be explored here simply by modifying the RTL — feel free to experiment.
 
 ## Project Information
 This project started June, 2024.
