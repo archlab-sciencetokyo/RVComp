@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+
+config BR2_PACKAGE_RVCOMP_CAMERA
+	bool "rvcomp-camera"
+	depends on BR2_LINUX_KERNEL
+	help
+	  Camera driver for RVComp SoC.
+
+	  This driver exposes /dev/rvcomp_cam0 and provides read/poll/ioctl
+	  for Gray8 frame capture through MMIO polling.

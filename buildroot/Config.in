@@ -5,3 +5,5 @@
 source "$BR2_EXTERNAL_RVCOMP_PATH/package/rvcomp-ethernet/Config.in"
 source "$BR2_EXTERNAL_RVCOMP_PATH/package/rvcomp-mmc/Config.in"
 source "$BR2_EXTERNAL_RVCOMP_PATH/package/rvcomp-bootfiles/Config.in"
+source "$BR2_EXTERNAL_RVCOMP_PATH/package/rvcomp-camera/Config.in"
+source "$BR2_EXTERNAL_RVCOMP_PATH/package/rvcomp-camtx/Config.in"

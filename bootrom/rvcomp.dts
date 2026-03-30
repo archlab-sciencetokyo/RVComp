@@ -14,7 +14,7 @@
   cpus {
     #address-cells = <1>;
     #size-cells = <0>;
-    timebase-frequency = <150000000>;
+    timebase-frequency = <100000000>;
     CPU0: cpu@0 {
       device_type = "cpu";
       reg = <0>;
@@ -57,9 +57,9 @@
       #interrupt-cells = <1>;
       interrupt-controller;
     };
-    SERIAL0: rvcomp-uart@10000000 {
-      compatible = "isct,rvcomp-uart";
-      clock-frequency = <150000000>;
+    SERIAL0: rvcom-uart@10000000 {
+      compatible = "isct,rvcom-uart";
+      clock-frequency = <100000000>;
       interrupt-parent = <&PLIC>;
       interrupts = <1>;
       reg = <0x0 0x10000000 0x0 0x10>;
@@ -71,6 +71,13 @@
       reg = <0x0 0xa0000000 0x0 0x2000>;
       rootfs-offset = <0x2000000>;   /* 32 MiB */
       disk-size-mb = <7168>;         /* 7 GiB (8GB MMC) */
+      status = "okay";
+    };
+    camera@b0000000 {
+      compatible = "rvcomp,camera";
+      reg = <0x0 0xb0000000 0x0 0x1000>,
+            <0x0 0xb0010000 0x0 0x20000>;
+      reg-names = "csr", "frame";
       status = "okay";
     };
     ethernet@14000000 {

@@ -210,7 +210,16 @@ module top;
         .sd_rst         (               ),  // output wire
         .sd_sclk        (               ),  // output wire
         .sd_cmd         (               ),  // inout  wire
-        .sd_dat         (               )   // inout  wire [3:0]
+        .sd_dat         (               ),  // inout  wire [3:0]
+        .pclk           (1'b0           ),  // input  wire
+        .camera_v_sync  (1'b0           ),  // input  wire
+        .camera_h_ref   (1'b0           ),  // input  wire
+        .din            (8'h00          ),  // input  wire [7:0]
+        .sioc           (               ),  // output wire
+        .siod           (               ),  // inout  wire
+        .reset          (               ),  // output wire
+        .power_down     (               ),  // output wire
+        .xclk           (               )   // output wire
 `else // DDR3, Arty
         .ddr3_addr      (               ), // output wire [13:0]
         .ddr3_ba        (               ), // output wire  [2:0]

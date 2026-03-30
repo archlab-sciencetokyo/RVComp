@@ -38,7 +38,7 @@
 `define DEBUG_ILA_RMII
 // CLKFREQ
 `ifndef CLK_FREQ_MHZ
-    `define CLK_FREQ_MHZ        (150     ) // MHz
+    `define CLK_FREQ_MHZ        (100     ) // MHz
 `endif
 
 // cpu
@@ -49,14 +49,14 @@
 `define L0_ICACHE_SIZE          (1024    ) // L0I$ size [bytes] need to be less than 4KiB
 `define L1_ICACHE_SIZE          (16*1024 ) // L1I$ size [bytes] need to be greater than 4KiB
 `define L1_DCACHE_SIZE          (16*1024 ) // L1D$ size [bytes] need to be greater than 4KiB
-`define L2_CACHE_SIZE           (128*1024) // L2$ (128*1024) size [bytes]
+`define L2_CACHE_SIZE           (32*1024 ) // L2$ (32*1024 ) size [bytes]
 
 // TLB cache size
-`define ITLB_ENTRIES            (128     ) // instruction TLB entry           
-`define DTLB_ENTRIES            (128     ) // data TLB entry
+`define ITLB_ENTRIES            (64      ) // instruction TLB entry           
+`define DTLB_ENTRIES            (64      ) // data TLB entry
 
 // uart
-`define BAUD_RATE               (3000000 ) // uart baud rate
+`define BAUD_RATE               (2000000 ) // uart baud rate
 `define DETECT_COUNT            (2       ) // uart detect count
 `define FIFO_DEPTH              (2*1024  ) // uart fifo depth
 

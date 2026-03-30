@@ -1,0 +1,191 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Archlab, Science Tokyo -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RVComp Camera Relay</title>
+  <style>
+    :root {
+      --bg: #0f1116;
+      --panel: #191d28;
+      --line: #2b3244;
+      --text: #e8edf7;
+      --muted: #9aa6be;
+      --ok: #8de08f;
+      --link: #a7d0ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Noto Sans JP", sans-serif;
+      background: radial-gradient(circle at 10% 0%, #1f2a42 0%, var(--bg) 50%);
+      color: var(--text);
+    }
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .title {
+      margin: 0 0 8px;
+      font-size: clamp(22px, 3.8vw, 34px);
+      letter-spacing: 0.02em;
+      font-weight: 700;
+    }
+    .sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(25,29,40,.95) 0%, rgba(16,19,28,.95) 100%);
+      padding: 14px;
+    }
+    #canvas {
+      width: 100%;
+      max-width: 640px;
+      height: auto;
+      image-rendering: pixelated;
+      border: 1px solid #40485f;
+      border-radius: 8px;
+      background: #000;
+      display: block;
+      margin: 0 auto;
+    }
+    .meta {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .meta b { color: var(--text); font-weight: 600; }
+    .license {
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title">RVComp Camera Stream</h1>
+    <p class="sub">UDP chunk -> Relay -> WebSocket -> Gray8 Canvas</p>
+    <div class="card">
+      <canvas id="canvas" width="320" height="240"></canvas>
+      <div class="meta">
+        <div>Status: <b id="status">connecting...</b></div>
+        <div>Seq: <b id="seq">-</b></div>
+        <div>Size: <b id="size">-</b></div>
+        <div>FPS: <b id="fps">-</b></div>
+      </div>
+      <div class="license">
+        Camera relay UI is MIT licensed. Vendor-generated IP such as Xilinx MIG and Clocking Wizard is excluded.
+        <a href="/licenses">License details</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const WS_MAGIC = 0x52564350;
+    const HDR_SIZE = 16;
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const statusEl = document.getElementById("status");
+    const seqEl = document.getElementById("seq");
+    const sizeEl = document.getElementById("size");
+    const fpsEl = document.getElementById("fps");
+
+    let imageData = ctx.createImageData(canvas.width, canvas.height);
+    let prevTs = performance.now();
+    let fps = 0;
+
+    function setStatus(text, ok = false) {
+      statusEl.textContent = text;
+      statusEl.className = ok ? "ok" : "";
+    }
+
+    function ensureCanvas(width, height) {
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
+      imageData = ctx.createImageData(width, height);
+    }
+
+    function drawGrayFrame(gray) {
+      const dst = imageData.data;
+      const n = gray.length;
+      for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const g = gray[i];
+        dst[j] = g;
+        dst[j + 1] = g;
+        dst[j + 2] = g;
+        dst[j + 3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function onBinary(buf) {
+      if (buf.byteLength < HDR_SIZE) return;
+      const view = new DataView(buf);
+      const magic = view.getUint32(0, true);
+      if (magic !== WS_MAGIC) return;
+
+      const seq = view.getUint32(4, true);
+      const width = view.getUint16(8, true);
+      const height = view.getUint16(10, true);
+      const frameBytes = view.getUint32(12, true);
+
+      if (buf.byteLength < HDR_SIZE + frameBytes) return;
+      const gray = new Uint8Array(buf, HDR_SIZE, frameBytes);
+
+      ensureCanvas(width, height);
+      drawGrayFrame(gray);
+
+      const now = performance.now();
+      const dt = now - prevTs;
+      prevTs = now;
+      if (dt > 0) fps = 1000 / dt;
+
+      seqEl.textContent = String(seq);
+      sizeEl.textContent = `${width}x${height} / ${frameBytes} bytes`;
+      fpsEl.textContent = fps.toFixed(1);
+      setStatus("streaming", true);
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => setStatus("connected");
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) onBinary(ev.data);
+      };
+      ws.onclose = () => {
+        setStatus("disconnected");
+        setTimeout(connect, 1000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+  </script>
+</body>
+</html>

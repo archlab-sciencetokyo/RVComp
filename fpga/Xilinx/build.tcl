@@ -269,6 +269,33 @@ launch_runs clk_wiz_2_synth_1 -jobs $nproc
 wait_on_run clk_wiz_2_synth_1
 export_simulation -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_2/clk_wiz_2.xci] -directory $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/sim_scripts -ip_user_files_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files -ipstatic_source_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/ipstatic -lib_map_path [list {modelsim=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/modelsim} {questa=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/questa} {xcelium=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/xcelium} {vcs=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/vcs} {riviera=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/riviera}] -use_ip_compiled_libs -force -quiet
 
+create_ip -name clk_wiz -vendor xilinx.com -library ip -version 6.0 -module_name clk_wiz_3
+set_property -dict [list \
+  CONFIG.NUM_OUT_CLKS {2}\
+  CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {24.000000}\
+  CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {24.000000}\
+  CONFIG.CLKOUT2_USED {true}\
+  CONFIG.PRIM_IN_FREQ {100.00000} \
+] [get_ips clk_wiz_3]
+# Clock Settings End
+generate_target {instantiation_template} [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_3/clk_wiz_3.xci]
+generate_target all [get_files  $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_3/clk_wiz_3.xci]
+catch { config_ip_cache -export [get_ips -all clk_wiz_3] }
+export_ip_user_files -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_3/clk_wiz_3.xci] -no_script -sync -force -quiet
+create_ip_run [get_files -of_objects [get_fileset sources_1] $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_3/clk_wiz_3.xci]
+launch_runs clk_wiz_3_synth_1 -jobs $nproc
+wait_on_run clk_wiz_3_synth_1
+export_simulation -of_objects [get_files $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.srcs/sources_1/ip/clk_wiz_3/clk_wiz_3.xci] -directory $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/sim_scripts -ip_user_files_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files -ipstatic_source_dir $PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.ip_user_files/ipstatic -lib_map_path [list {modelsim=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/modelsim} {questa=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/questa} {xcelium=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/xcelium} {vcs=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/vcs} {riviera=$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.cache/compile_simlib/riviera}] -use_ip_compiled_libs -force -quiet
+
+# Avoid primary clock re-definition from clock-wizard packaged XDCs.
+foreach wiz_name {clk_wiz_0 clk_wiz_1 clk_wiz_2 clk_wiz_3} {
+    set wiz_xdc [get_files -quiet "$PROJECT_PATH/$PROJECT_NAME/$PROJECT_NAME.gen/sources_1/ip/$wiz_name/$wiz_name.xdc"]
+    if {[llength $wiz_xdc] > 0} {
+        set_property USED_IN_SYNTHESIS false $wiz_xdc
+        set_property USED_IN_IMPLEMENTATION false $wiz_xdc
+    }
+}
+
 add_files -norecurse $SRC_FILES
 add_files -fileset constrs_1 -norecurse $CONSTR_PATH
 update_compile_order -fileset sources_1

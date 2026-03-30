@@ -12,6 +12,7 @@
 ## Clock signal
 set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports clk_i]
 create_clock -period 10.000 -name sys_clk_pin -waveform {0.000 5.000} -add [get_ports clk_i]
+set_input_jitter [get_clocks sys_clk_pin] 0.100
 
 ##Switches
 #set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { SW[0] }]; #IO_L24N_T3_RS0_15 Sch=sw[0]
@@ -106,6 +107,27 @@ set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports rst_ni]
 #set_property -dict { PACKAGE_PIN F13   IOSTANDARD LVCMOS33 } [get_ports { JB[8] }]; #IO_L5P_T0_AD9P_15 Sch=jb[8]
 #set_property -dict { PACKAGE_PIN G13   IOSTANDARD LVCMOS33 } [get_ports { JB[9] }]; #IO_0_15 Sch=jb[9]
 #set_property -dict { PACKAGE_PIN H16   IOSTANDARD LVCMOS33 } [get_ports { JB[10] }]; #IO_L13P_T2_MRCC_15 Sch=jb[10]
+
+## OV7670 Camera (Pmod JA/JB)
+## JB: sioc(JB1) vsync(JB2) xclk(JB3) din6(JB4) siod(JB7) href(JB8) din7(JB9) pclk(JB10)
+## JA: power_down(JA1) din0(JA2) din2(JA3) din4(JA4) reset(JA7) din1(JA8) din3(JA9) din5(JA10)
+set_property -dict { PACKAGE_PIN D14 IOSTANDARD LVCMOS33 } [get_ports sioc]
+set_property -dict { PACKAGE_PIN F16 IOSTANDARD LVCMOS33 } [get_ports camera_v_sync]
+set_property -dict { PACKAGE_PIN G16 IOSTANDARD LVCMOS33 } [get_ports xclk]
+set_property -dict { PACKAGE_PIN H14 IOSTANDARD LVCMOS33 } [get_ports {din[6]}]
+set_property -dict { PACKAGE_PIN E16 IOSTANDARD LVCMOS33 } [get_ports siod]
+set_property -dict { PACKAGE_PIN F13 IOSTANDARD LVCMOS33 } [get_ports camera_h_ref]
+set_property -dict { PACKAGE_PIN G13 IOSTANDARD LVCMOS33 } [get_ports {din[7]}]
+set_property -dict { PACKAGE_PIN H16 IOSTANDARD LVCMOS33 } [get_ports pclk]
+set_property -dict { PACKAGE_PIN C17 IOSTANDARD LVCMOS33 } [get_ports power_down]
+set_property -dict { PACKAGE_PIN D18 IOSTANDARD LVCMOS33 } [get_ports {din[0]}]
+set_property -dict { PACKAGE_PIN E18 IOSTANDARD LVCMOS33 } [get_ports {din[2]}]
+set_property -dict { PACKAGE_PIN G17 IOSTANDARD LVCMOS33 } [get_ports {din[4]}]
+set_property -dict { PACKAGE_PIN D17 IOSTANDARD LVCMOS33 } [get_ports reset]
+set_property -dict { PACKAGE_PIN E17 IOSTANDARD LVCMOS33 } [get_ports {din[1]}]
+set_property -dict { PACKAGE_PIN F18 IOSTANDARD LVCMOS33 } [get_ports {din[3]}]
+set_property -dict { PACKAGE_PIN G18 IOSTANDARD LVCMOS33 } [get_ports {din[5]}]
+create_clock -name camera_pclk -period 83.333 [get_ports pclk]
 
 ##Pmod Header JC
 #set_property -dict { PACKAGE_PIN K1    IOSTANDARD LVCMOS33 } [get_ports { JC[1] }]; #IO_L23N_T3_35 Sch=jc[1]
@@ -214,27 +236,32 @@ set_property -dict {PACKAGE_PIN B8 IOSTANDARD LVCMOS33} [get_ports eth_intn]
 # RMII is a source-synchronous interface where the FPGA provides the 50MHz reference clock
 # and the PHY returns data aligned to that clock with some propagation delay.
 
-# Get the 50MHz clock used for RMII
+# RMII clock handles:
+# - rmii_rx_cap_clk: internal 50MHz capture clock used by RX IOB FFs
+# - rmii_ref_clk: exported 50MHz reference clock to PHY (phase shifted)
+set rmii_rx_cap_clk [get_clocks -of_objects [get_pins -hierarchical -quiet -filter {NAME =~ *clk_wiz_2*/clk_out1}]]
+set rmii_ref_clk    [get_clocks -of_objects [get_pins -hierarchical -quiet -filter {NAME =~ *eth_refclk*}]]
 
 # Input delays for receive signals (from PHY to FPGA)
-# These represent the PHY's clock-to-output delays based on typical RMII PHY specs (e.g., LAN8720A)
-# tCO_max (worst case): ~14ns (PHY clock to output delay)
-# tCO_min (best case): ~0ns (minimum propagation delay)
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports {eth_rxd[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports {eth_rxd[*]}]
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports eth_crsdv]
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports eth_crsdv]
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 14.000 [get_ports eth_rxerr]
-set_input_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min 0.000 [get_ports eth_rxerr]
+# Hold violations on RMII RX were caused by an unrealistically small tCO_min.
+# Use a conservative non-zero tCO_min model to match board + PHY behavior.
+set rmii_rx_tco_max 14.000
+set rmii_rx_tco_min 3.000
+set_input_delay -clock $rmii_rx_cap_clk -max $rmii_rx_tco_max [get_ports {eth_rxd[*]}]
+set_input_delay -clock $rmii_rx_cap_clk -min $rmii_rx_tco_min [get_ports {eth_rxd[*]}]
+set_input_delay -clock $rmii_rx_cap_clk -max $rmii_rx_tco_max [get_ports eth_crsdv]
+set_input_delay -clock $rmii_rx_cap_clk -min $rmii_rx_tco_min [get_ports eth_crsdv]
+set_input_delay -clock $rmii_rx_cap_clk -max $rmii_rx_tco_max [get_ports eth_rxerr]
+set_input_delay -clock $rmii_rx_cap_clk -min $rmii_rx_tco_min [get_ports eth_rxerr]
 
 # Output delays for transmit signals (from FPGA to PHY)
 # These represent the PHY's input requirements (setup and hold times)
 # tSU (setup time): 4ns - PHY needs data stable 4ns before clock edge
 # tH (hold time): 2ns - PHY needs data stable 2ns after clock edge
-set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 4.000 [get_ports {eth_txd[*]}]
-set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min -2.000 [get_ports {eth_txd[*]}]
-set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -max 4.000 [get_ports eth_txen]
-set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter {NAME =~ *eth_refclk*}]] -min -2.000 [get_ports eth_txen]
+set_output_delay -clock $rmii_ref_clk -max 4.000 [get_ports {eth_txd[*]}]
+set_output_delay -clock $rmii_ref_clk -min -2.000 [get_ports {eth_txd[*]}]
+set_output_delay -clock $rmii_ref_clk -max 4.000 [get_ports eth_txen]
+set_output_delay -clock $rmii_ref_clk -min -2.000 [get_ports eth_txen]
 
 ##Quad SPI Flash
 #set_property -dict { PACKAGE_PIN K17   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[0] }]; #IO_L1P_T0_D00_MOSI_14 Sch=qspi_dq[0]
@@ -242,6 +269,15 @@ set_output_delay -clock [get_clocks -of_objects [get_pins -hierarchical -filter 
 #set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[2] }]; #IO_L2P_T0_D02_14 Sch=qspi_dq[2]
 #set_property -dict { PACKAGE_PIN M14   IOSTANDARD LVCMOS33 } [get_ports { QSPI_DQ[3] }]; #IO_L2N_T0_D03_14 Sch=qspi_dq[3]
 #set_property -dict { PACKAGE_PIN L13   IOSTANDARD LVCMOS33 } [get_ports { QSPI_CSN }]; #IO_L6P_T0_FCS_B_14 Sch=qspi_csn
-set_clock_groups -physically_exclusive -group [get_clocks clk_out1_clk_wiz_2] -group [get_clocks clk_out2_clk_wiz_2]
-
-set_clock_groups -asynchronous -group [list user_clock [get_clocks -of_objects [get_pins clk_wiz_1/inst/mmcm_adv_inst/CLKOUT0]]]
+# DRAM UI clocks (derived inside MIG from clk_wiz_0) and SoC clock (clk_wiz_1)
+# are crossed only via CDC structures (synchronizer/async FIFO), so treat them
+# as asynchronous for timing analysis.
+set_clock_groups -asynchronous \
+    -group [get_clocks -include_generated_clocks -of_objects [get_pins -hierarchical -quiet -filter {NAME =~ *clk_wiz_1*/clk_out1}]] \
+    -group [get_clocks -include_generated_clocks -of_objects [get_pins -hierarchical -quiet -filter {(NAME =~ *clk_wiz_0*/clk_out1) || (NAME =~ *clk_wiz_0*/clk_out2)}]]
+set_clock_groups -asynchronous \
+    -group [get_clocks camera_pclk] \
+    -group [get_clocks -include_generated_clocks -of_objects [get_pins -hierarchical -quiet -filter {NAME =~ *clk_wiz_1*/clk_out1}]]
+set_clock_groups -asynchronous \
+    -group [get_clocks -of_objects [get_pins -hierarchical -quiet -filter {(NAME =~ *clk_wiz_3*/clk_out1) || (NAME =~ *clk_wiz_3*/clk_out2)}]] \
+    -group [get_clocks -include_generated_clocks -of_objects [get_pins -hierarchical -quiet -filter {NAME =~ *clk_wiz_1*/clk_out1}]]

@@ -14,7 +14,7 @@ NO_UART_BOOT        := 1
 
 NEXYS4DDR        := 1
 ARTY_A7          := 0
-BAUD_RATE        := 3000000
+BAUD_RATE        := 2000000
 
 ### verilator
 verilator           := verilator

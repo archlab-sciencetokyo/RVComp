@@ -13,7 +13,7 @@ RISCV_PATH          :=
 vivado              := vivado                 # vivado path
 serial_number       :=                        # serial number
 ip_address          :=                        # ip address
-BAUD_RATE		    := 3000000               # baud rate for pyserial
+BAUD_RATE		    := 2000000               # baud rate for pyserial
 COM_PORT		    := /dev/ttyUSB1           # serial port for pyserial
 board_data_path     := $(shell pwd)/tools/XilinxBoardStore  # board data path
 
@@ -89,6 +89,7 @@ srcs                += $(wildcard $(src_dir)/uart/*.v)
 srcs                += $(wildcard $(src_dir)/dram/*.v)
 srcs                += $(wildcard $(src_dir)/sdcram/*.v)
 srcs                += $(wildcard $(src_dir)/ether/*.v)
+srcs                += $(wildcard $(src_dir)/camera/*.v)
 inc_dir             += $(src_dir)
 configs             := $(wildcard $(src_dir)/*.vh)
 

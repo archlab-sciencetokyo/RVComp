@@ -57,7 +57,16 @@ module soc (
     output wire        sd_rst           , // sd card reset
     output wire        sd_sclk          , // sd card serial clock
     inout  wire        sd_cmd           , // sd card command
-    inout  wire  [3:0] sd_dat             // sd card data bus
+    inout  wire  [3:0] sd_dat           , // sd card data bus
+    input  wire        pclk             , // OV7670 camera PCLK
+    input  wire        camera_v_sync    , // OV7670 camera VSYNC
+    input  wire        camera_h_ref     , // OV7670 camera HREF
+    input  wire  [7:0] din              , // OV7670 camera D0-D7
+    output wire        sioc             , // OV7670 camera SIOC
+    output wire        siod             , // OV7670 camera SIOD
+    output wire        reset            , // OV7670 camera RESET#
+    output wire        power_down       , // OV7670 camera PWDN
+    output wire        xclk               // OV7670 camera XCLK
 `else // DDR3, Arty
     output wire [13:0] ddr3_addr        , // address
     output wire  [2:0] ddr3_ba          , // bank address
@@ -78,9 +87,10 @@ module soc (
 );
 
     wire clk_ibuf, clk_bufg, clk ;
-    wire ui_rst, locked_1        ;
-    wire clk_50mhz, locked_2     ;
-    wire eth_refclk_int          ;
+    wire ui_rst, locked_1;
+    wire clk_50mhz, locked_2;
+    wire clk_cam_xclk, clk_cam_i2c, locked_3;
+    wire eth_refclk_int;
     ///// input buffer
     IBUF ibuf_clk (
         .I (clk_i   ), // input  clk_i   : 100 MHz
@@ -106,6 +116,13 @@ module soc (
         .locked      (locked_2       ), // output wire locked
         .clk_in1     (clk_bufg       )  // input  wire clk_bufg: 100 MHz
     );
+    clk_wiz_3 clk_wiz_3 (
+        .clk_out1    (clk_cam_xclk   ), // output wire clk_cam_xclk  : 24 MHz for OV7670 XCLK
+        .clk_out2    (clk_cam_i2c    ), // output wire clk_cam_i2c   : 24 MHz for OV7670 SCCB
+        .reset       (ui_rst         ), // input  wire reset         : dram reset
+        .locked      (locked_3       ), // output wire locked
+        .clk_in1     (clk_bufg       )  // input  wire clk_bufg: 100 MHz
+    );
 `ifdef ETH_IF_RMII
     assign eth_refclk = eth_refclk_int;
 `elsif ETH_IF_MII
@@ -123,10 +140,12 @@ module soc (
     wire soft_rst_active_raw;
     wire soft_rst_active;
     wire soc_rst;
+    wire camera_rst;
 
     assign soft_rst_active_raw = (soft_rst_cnt_raw_q != 10'd0);
     assign soft_rst_active     = soft_rst_sync_ff2_q;
     assign soc_rst             = rst || soft_rst_active;
+    assign camera_rst          = soc_rst || !locked_3;
     assign mem_rst_ni          = rst_ni;
 
     // Cross software reset request from clk to clk_bufg to keep pulse width stable
@@ -460,6 +479,21 @@ module soc (
     wire                            sdcram_rready       ;
     wire  [`SDCRAM_DATA_WIDTH-1:0]  sdcram_rdata        ;
     wire  [`RRESP_WIDTH-1:0]        sdcram_rresp        ;
+    wire                            camera_wvalid       ;
+    wire                            camera_wready       ;
+    wire  [`CAMERA_ADDR_WIDTH-1:0]  camera_awaddr       ;
+    wire  [`CAMERA_DATA_WIDTH-1:0]  camera_wdata        ;
+    wire  [`CAMERA_STRB_WIDTH-1:0]  camera_wstrb        ;
+    wire                            camera_bvalid       ;
+    wire                            camera_bready       ;
+    wire  [`BRESP_WIDTH-1:0]        camera_bresp        ;
+    wire                            camera_arvalid      ;
+    wire                            camera_arready      ;
+    wire  [`CAMERA_ADDR_WIDTH-1:0]  camera_araddr       ;
+    wire                            camera_rvalid       ;
+    wire                            camera_rready       ;
+    wire  [`CAMERA_DATA_WIDTH-1:0]  camera_rdata        ;
+    wire  [`RRESP_WIDTH-1:0]        camera_rresp        ;
 `endif
 
     axi_interconnect axi_interconnect (
@@ -579,7 +613,22 @@ module soc (
         .sdcram_rvalid_i    (sdcram_rvalid          ), // input  wire
         .sdcram_rready_o    (sdcram_rready          ), // output wire
         .sdcram_rdata_i     (sdcram_rdata           ), // input  wire   [`SDCRAM_DATA_WIDTH-1:0]
-        .sdcram_rresp_i     (sdcram_rresp           )  // input  wire         [`RRESP_WIDTH-1:0]
+        .sdcram_rresp_i     (sdcram_rresp           ), // input  wire         [`RRESP_WIDTH-1:0]
+        .camera_wvalid_o    (camera_wvalid          ), // output wire
+        .camera_wready_i    (camera_wready          ), // input  wire
+        .camera_awaddr_o    (camera_awaddr          ), // output wire   [`CAMERA_ADDR_WIDTH-1:0]
+        .camera_wdata_o     (camera_wdata           ), // output wire   [`CAMERA_DATA_WIDTH-1:0]
+        .camera_wstrb_o     (camera_wstrb           ), // output wire   [`CAMERA_STRB_WIDTH-1:0]
+        .camera_bvalid_i    (camera_bvalid          ), // input  wire
+        .camera_bready_o    (camera_bready          ), // output wire
+        .camera_bresp_i     (camera_bresp           ), // input  wire         [`BRESP_WIDTH-1:0]
+        .camera_arvalid_o   (camera_arvalid         ), // output wire
+        .camera_arready_i   (camera_arready         ), // input  wire
+        .camera_araddr_o    (camera_araddr          ), // output wire   [`CAMERA_ADDR_WIDTH-1:0]
+        .camera_rvalid_i    (camera_rvalid          ), // input  wire
+        .camera_rready_o    (camera_rready          ), // output wire
+        .camera_rdata_i     (camera_rdata           ), // input  wire   [`CAMERA_DATA_WIDTH-1:0]
+        .camera_rresp_i     (camera_rresp           )  // input  wire         [`RRESP_WIDTH-1:0]
 `endif
     );
 
@@ -697,6 +746,20 @@ module soc (
     // Internal wires from ether module
     wire [1:0] txd_internal;
     wire txen_internal;
+    reg  eth_rst_50mhz_ff1_q;
+    reg  eth_rst_50mhz_ff2_q;
+    wire eth_rst_50mhz = eth_rst_50mhz_ff2_q;
+
+    // Synchronize SoC reset deassertion into the 50MHz Ethernet domain.
+    always @(posedge clk_50mhz or posedge soc_rst) begin
+        if (soc_rst) begin
+            eth_rst_50mhz_ff1_q <= 1'b1;
+            eth_rst_50mhz_ff2_q <= 1'b1;
+        end else begin
+            eth_rst_50mhz_ff1_q <= 1'b0;
+            eth_rst_50mhz_ff2_q <= eth_rst_50mhz_ff1_q;
+        end
+    end
 
     always @(posedge clk_50mhz) begin
         // RX: capture inputs at IOB
@@ -721,7 +784,7 @@ module soc (
     ) ether (
         .clk_i              (clk                    ), // input  wire
         .clk_50mhz_i        (clk_50mhz              ), // input  wire : 50MHz 0deg for internal logic
-        .rst_i              (soc_rst                ), // input  wire
+        .rst_i              (eth_rst_50mhz          ), // input  wire (synchronized to clk_50mhz)
         .irq_o              (ether_irq              ), // output wire
         .wvalid_i           (ether_wvalid           ), // input  wire
         .wready_o           (ether_wready           ), // output wire
@@ -905,6 +968,41 @@ module soc (
         .sd_sclk           (sd_sclk               ), // output wire
         .sd_cmd            (sd_cmd                ), // output wire
         .sd_dat            (sd_dat                )  // inout  wire                [3:0]
+    );
+
+    // camera
+    camera #(
+        .ADDR_WIDTH        (`CAMERA_ADDR_WIDTH    ),
+        .DATA_WIDTH        (`CAMERA_DATA_WIDTH    )
+    ) camera_0 (
+        .clk_i             (clk                   ), // input  wire
+        .clk_cam_xclk_i    (clk_cam_xclk          ), // input  wire
+        .clk_cam_i2c_i     (clk_cam_i2c           ), // input  wire
+        .rst_i             (camera_rst            ), // input  wire
+        .wvalid_i          (camera_wvalid         ), // input  wire
+        .wready_o          (camera_wready         ), // output wire
+        .awaddr_i          (camera_awaddr         ), // input  wire
+        .wdata_i           (camera_wdata          ), // input  wire
+        .wstrb_i           (camera_wstrb          ), // input  wire
+        .bvalid_o          (camera_bvalid         ), // output wire
+        .bready_i          (camera_bready         ), // input  wire
+        .bresp_o           (camera_bresp          ), // output wire
+        .arvalid_i         (camera_arvalid        ), // input  wire
+        .arready_o         (camera_arready        ), // output wire
+        .araddr_i          (camera_araddr         ), // input  wire
+        .rvalid_o          (camera_rvalid         ), // output wire
+        .rready_i          (camera_rready         ), // input  wire
+        .rdata_o           (camera_rdata          ), // output wire
+        .rresp_o           (camera_rresp          ), // output wire
+        .pclk              (pclk                  ), // input  wire
+        .camera_v_sync     (camera_v_sync         ), // input  wire
+        .camera_h_ref      (camera_h_ref          ), // input  wire
+        .din               (din                   ), // input  wire
+        .sioc              (sioc                  ), // output wire
+        .siod              (siod                  ), // inout  wire
+        .reset             (reset                 ), // output wire
+        .power_down        (power_down            ), // output wire
+        .xclk              (xclk                  )  // output wire
     );
 `endif
 

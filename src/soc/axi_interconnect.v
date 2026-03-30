@@ -137,7 +137,23 @@ module axi_interconnect (
     input  wire                            sdcram_rvalid_i      , // read response valid
     output wire                            sdcram_rready_o      , // read response ready
     input  wire   [`SDCRAM_DATA_WIDTH-1:0] sdcram_rdata_i       , // read response data
-    input  wire         [`RRESP_WIDTH-1:0] sdcram_rresp_i         // read response status
+    input  wire         [`RRESP_WIDTH-1:0] sdcram_rresp_i       , // read response status
+    // camera interface
+    output wire                            camera_wvalid_o      , // write request valid
+    input  wire                            camera_wready_i      , // write request ready
+    output wire   [`CAMERA_ADDR_WIDTH-1:0] camera_awaddr_o      , // write request address
+    output wire   [`CAMERA_DATA_WIDTH-1:0] camera_wdata_o       , // write request data
+    output wire   [`CAMERA_STRB_WIDTH-1:0] camera_wstrb_o       , // write request strobe
+    input  wire                            camera_bvalid_i      , // write response valid
+    output wire                            camera_bready_o      , // write response ready
+    input  wire         [`BRESP_WIDTH-1:0] camera_bresp_i       , // write response status
+    output wire                            camera_arvalid_o     , // read request valid
+    input  wire                            camera_arready_i     , // read request ready
+    output wire   [`CAMERA_ADDR_WIDTH-1:0] camera_araddr_o      , // read request address
+    input  wire                            camera_rvalid_i      , // read response valid
+    output wire                            camera_rready_o      , // read response ready
+    input  wire   [`CAMERA_DATA_WIDTH-1:0] camera_rdata_i       , // read response data
+    input  wire         [`RRESP_WIDTH-1:0] camera_rresp_i         // read response status
 `endif
 );
 
@@ -151,7 +167,8 @@ module axi_interconnect (
     localparam WR_ETHER    = 4'd4  ;
     localparam WR_DRAM     = 4'd5  ;
     localparam WR_SDCRAM   = 4'd6  ;
-    localparam WR_RET      = 4'd7  ;
+    localparam WR_CAMERA   = 4'd7  ;
+    localparam WR_RET      = 4'd8  ;
     reg  [3:0] wr_state_q   , wr_state_d    ;
 
     localparam RD_IDLE     = 4'd0  ;
@@ -162,7 +179,8 @@ module axi_interconnect (
     localparam RD_ETHER    = 4'd5  ;
     localparam RD_DRAM     = 4'd6  ;
     localparam RD_SDCRAM   = 4'd7  ;
-    localparam RD_RET      = 4'd8  ;
+    localparam RD_CAMERA   = 4'd8  ;
+    localparam RD_RET      = 4'd9  ;
     reg  [3:0] rd_state_q   , rd_state_d    ;
 
     assign cpu_wready_o     = (wr_state_q==WR_IDLE)   ;
@@ -185,6 +203,8 @@ module axi_interconnect (
 `ifdef NEXYS
     assign sdcram_bready_o  = (wr_state_q==WR_SDCRAM) ;
     assign sdcram_rready_o  = (rd_state_q==RD_SDCRAM) ;
+    assign camera_bready_o  = (wr_state_q==WR_CAMERA) ;
+    assign camera_rready_o  = (rd_state_q==RD_CAMERA) ;
 `endif
 
 //==============================================================================
@@ -228,7 +248,13 @@ module axi_interconnect (
 //             |                                                               |
 //  0xa0000000 +---------------------------------------------------------------+
 //             | sdcram memory                                                 |
-//  0xbfffffff +---------------------------------------------------------------+
+//  0xafffffff +---------------------------------------------------------------+
+//             | camera CSR                                                    |
+//  0xb0001000 +---------------------------------------------------------------+
+//             |                                                               |
+//  0xb0010000 +---------------------------------------------------------------+
+//             | camera frame aperture                                         |
+//  0xb0030000 +---------------------------------------------------------------+
 //==============================================================================
     // write
     reg                          clint_wvalid_q     , clint_wvalid_d    ;
@@ -260,6 +286,10 @@ module axi_interconnect (
     reg [`SDCRAM_ADDR_WIDTH-1:0] sdcram_awaddr_q    , sdcram_awaddr_d   ;
     reg [`SDCRAM_DATA_WIDTH-1:0] sdcram_wdata_q     , sdcram_wdata_d    ;
     reg [`SDCRAM_STRB_WIDTH-1:0] sdcram_wstrb_q     , sdcram_wstrb_d    ;
+    reg                          camera_wvalid_q    , camera_wvalid_d   ;
+    reg [`CAMERA_ADDR_WIDTH-1:0] camera_awaddr_q    , camera_awaddr_d   ;
+    reg [`CAMERA_DATA_WIDTH-1:0] camera_wdata_q     , camera_wdata_d    ;
+    reg [`CAMERA_STRB_WIDTH-1:0] camera_wstrb_q     , camera_wstrb_d    ;
 
     reg                          sw_rst_req_q       , sw_rst_req_d      ;
 
@@ -295,6 +325,10 @@ module axi_interconnect (
     assign sdcram_awaddr_o  = sdcram_awaddr_q   ;
     assign sdcram_wdata_o   = sdcram_wdata_q    ;
     assign sdcram_wstrb_o   = sdcram_wstrb_q    ;
+    assign camera_wvalid_o  = camera_wvalid_q   ;
+    assign camera_awaddr_o  = camera_awaddr_q   ;
+    assign camera_wdata_o   = camera_wdata_q    ;
+    assign camera_wstrb_o   = camera_wstrb_q    ;
 `endif
 
     assign sw_rst_req_o     = sw_rst_req_q      ;
@@ -325,6 +359,10 @@ module axi_interconnect (
         sdcram_awaddr_d     = sdcram_awaddr_q   ;
         sdcram_wdata_d      = sdcram_wdata_q    ;
         sdcram_wstrb_d      = sdcram_wstrb_q    ;
+        camera_wvalid_d     = camera_wvalid_q   ;
+        camera_awaddr_d     = camera_awaddr_q   ;
+        camera_wdata_d      = camera_wdata_q    ;
+        camera_wstrb_d      = camera_wstrb_q    ;
         sw_rst_req_d        = 1'b0              ;
         cpu_bresp_d         = cpu_bresp_q       ;
         wr_state_d          = wr_state_q        ;
@@ -422,12 +460,19 @@ module axi_interconnect (
                             wr_state_d      = WR_DRAM                               ;
                         end
 `ifdef NEXYS
-                        'ha, 'hb: begin // sdcram (0xa0000000-0xbfffffff)
+                        'ha     : begin // sdcram (0xa0000000-0xafffffff)
                             sdcram_wvalid_d = 1'b1                                  ;
                             sdcram_awaddr_d = cpu_awaddr_i[`SDCRAM_ADDR_WIDTH-1:0]  ;
                             sdcram_wdata_d  = cpu_wdata_i[`SDCRAM_DATA_WIDTH-1:0]   ;
                             sdcram_wstrb_d  = cpu_wstrb_i[`SDCRAM_STRB_WIDTH-1:0]   ;
                             wr_state_d      = WR_SDCRAM                             ;
+                        end
+                        'hb     : begin // camera (0xb0000000-0xbfffffff, sparse)
+                            camera_wvalid_d = 1'b1                                  ;
+                            camera_awaddr_d = cpu_awaddr_i[`CAMERA_ADDR_WIDTH-1:0]  ;
+                            camera_wdata_d  = cpu_wdata_i[`CAMERA_DATA_WIDTH-1:0]   ;
+                            camera_wstrb_d  = cpu_wstrb_i[`CAMERA_STRB_WIDTH-1:0]   ;
+                            wr_state_d      = WR_CAMERA                             ;
                         end
 `endif
                         default : begin
@@ -492,6 +537,15 @@ module axi_interconnect (
                     wr_state_d      = WR_RET        ;
                 end
             end
+            WR_CAMERA  : begin
+                if (camera_wready_i) begin
+                    camera_wvalid_d = 1'b0          ;
+                end
+                if (camera_bvalid_i) begin
+                    cpu_bresp_d     = camera_bresp_i;
+                    wr_state_d      = WR_RET        ;
+                end
+            end
 `endif
             WR_RET     : begin
                 if (cpu_bready_i) begin
@@ -510,6 +564,7 @@ module axi_interconnect (
             ether_wvalid_q      <= 1'b0                 ;
             dram_wvalid_q       <= 1'b0                 ;
             sdcram_wvalid_q     <= 1'b0                 ;
+            camera_wvalid_q     <= 1'b0                 ;
             sw_rst_req_q        <= 1'b0                 ;
             wr_state_q          <= WR_IDLE              ;
         end else begin
@@ -537,6 +592,10 @@ module axi_interconnect (
             sdcram_awaddr_q     <= sdcram_awaddr_d      ;
             sdcram_wdata_q      <= sdcram_wdata_d       ;
             sdcram_wstrb_q      <= sdcram_wstrb_d       ;
+            camera_wvalid_q     <= camera_wvalid_d      ;
+            camera_awaddr_q     <= camera_awaddr_d      ;
+            camera_wdata_q      <= camera_wdata_d       ;
+            camera_wstrb_q      <= camera_wstrb_d       ;
             sw_rst_req_q        <= sw_rst_req_d         ;
             cpu_bresp_q         <= cpu_bresp_d          ;
             wr_state_q          <= wr_state_d           ;
@@ -564,6 +623,8 @@ module axi_interconnect (
 
     reg                            sdcram_arvalid_q     , sdcram_arvalid_d      ;
     reg   [`SDCRAM_ADDR_WIDTH-1:0] sdcram_araddr_q      , sdcram_araddr_d       ;
+    reg                            camera_arvalid_q     , camera_arvalid_d      ;
+    reg   [`CAMERA_ADDR_WIDTH-1:0] camera_araddr_q      , camera_araddr_d       ;
 
     reg      [`BUS_DATA_WIDTH-1:0] cpu_rdata_q          , cpu_rdata_d           ;
     reg         [`RRESP_WIDTH-1:0] cpu_rresp_q          , cpu_rresp_d           ;
@@ -589,6 +650,8 @@ module axi_interconnect (
 `ifdef NEXYS
     assign sdcram_arvalid_o     = sdcram_arvalid_q      ;
     assign sdcram_araddr_o      = sdcram_araddr_q       ;
+    assign camera_arvalid_o     = camera_arvalid_q      ;
+    assign camera_araddr_o      = camera_araddr_q       ;
 `endif
 
     assign cpu_rdata_o          = cpu_rdata_q           ;
@@ -610,6 +673,8 @@ module axi_interconnect (
 `ifdef NEXYS
         sdcram_arvalid_d    = sdcram_arvalid_q      ;
         sdcram_araddr_d     = sdcram_araddr_q       ;
+        camera_arvalid_d    = camera_arvalid_q      ;
+        camera_araddr_d     = camera_araddr_q       ;
 `endif
         cpu_rdata_d         = cpu_rdata_q           ;
         cpu_rresp_d         = cpu_rresp_q           ;
@@ -707,10 +772,15 @@ module axi_interconnect (
                             rd_state_d          = RD_DRAM                               ;
                         end
 `ifdef NEXYS
-                        'ha, 'hb: begin // sdcram (0xa0000000-0xbfffffff)
+                        'ha     : begin // sdcram (0xa0000000-0xafffffff)
                             sdcram_arvalid_d    = 1'b1                                  ;
                             sdcram_araddr_d     = cpu_araddr_i[`SDCRAM_ADDR_WIDTH-1:0]  ;
                             rd_state_d          = RD_SDCRAM                             ;
+                        end
+                        'hb     : begin // camera (0xb0000000-0xbfffffff, sparse)
+                            camera_arvalid_d    = 1'b1                                  ;
+                            camera_araddr_d     = cpu_araddr_i[`CAMERA_ADDR_WIDTH-1:0]  ;
+                            rd_state_d          = RD_CAMERA                             ;
                         end
 `endif
                         default : begin
@@ -791,6 +861,16 @@ module axi_interconnect (
                     rd_state_d          = RD_RET            ;
                 end
             end
+            RD_CAMERA  : begin
+                if (camera_arready_i) begin
+                    camera_arvalid_d    = 1'b0              ;
+                end
+                if (camera_rvalid_i) begin
+                    cpu_rdata_d         = camera_rdata_i    ;
+                    cpu_rresp_d         = camera_rresp_i    ;
+                    rd_state_d          = RD_RET            ;
+                end
+            end
 `endif
             RD_RET     : begin
                 if (cpu_rready_i) begin
@@ -811,6 +891,7 @@ module axi_interconnect (
             dram_arvalid_q      <= 1'b0                 ;
 `ifdef NEXYS
             sdcram_arvalid_q    <= 1'b0                 ;
+            camera_arvalid_q    <= 1'b0                 ;
 `endif
             rd_state_q          <= RD_IDLE              ;
         end else begin
@@ -829,6 +910,8 @@ module axi_interconnect (
 `ifdef NEXYS
             sdcram_arvalid_q    <= sdcram_arvalid_d     ;
             sdcram_araddr_q     <= sdcram_araddr_d      ;
+            camera_arvalid_q    <= camera_arvalid_d     ;
+            camera_araddr_q     <= camera_araddr_d      ;
 `endif
             cpu_rdata_q         <= cpu_rdata_d          ;
             cpu_rresp_q         <= cpu_rresp_d          ;

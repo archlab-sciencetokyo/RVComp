@@ -92,11 +92,20 @@
 
 // sdcram
 `define SDCRAM_BASE                 'ha0000000
-`define SDCRAM_SIZE                 (1536*1024*1024) // 1.5 GiB (0xa0000000-0xffffffff)
+`define SDCRAM_SIZE                 (256*1024*1024) // 256 MiB (0xa0000000-0xafffffff)
 `define SDCRAM_ADDR_WIDTH           32
 `define SDCRAM_DATA_WIDTH           32
 `define SDCRAM_STRB_WIDTH           (`SDCRAM_DATA_WIDTH/8)
 `define SD_ADDR_WIDTH               41
+
+// camera
+`define CAMERA_CSR_BASE             'hb0000000
+`define CAMERA_CSR_SIZE             (4*1024)
+`define CAMERA_FRAME_BASE           'hb0010000
+`define CAMERA_FRAME_SIZE           (128*1024)
+`define CAMERA_ADDR_WIDTH           32
+`define CAMERA_DATA_WIDTH           32
+`define CAMERA_STRB_WIDTH           (`CAMERA_DATA_WIDTH/8)
 
 // instruction type
 `define NONE_TYPE                   0

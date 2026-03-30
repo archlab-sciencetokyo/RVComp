@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Archlab, Science Tokyo -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RVComp Camera Relay Licenses</title>
+  <style>
+    :root {
+      --bg: #0f1116;
+      --panel: #191d28;
+      --line: #2b3244;
+      --text: #e8edf7;
+      --muted: #9aa6be;
+      --link: #a7d0ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Noto Sans JP", sans-serif;
+      background: radial-gradient(circle at 10% 0%, #1f2a42 0%, var(--bg) 50%);
+      color: var(--text);
+    }
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(25,29,40,.95) 0%, rgba(16,19,28,.95) 100%);
+      padding: 18px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(22px, 3.8vw, 34px);
+    }
+    p, li {
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    ul {
+      margin: 12px 0 0;
+      padding-left: 20px;
+    }
+    code {
+      color: var(--text);
+      font-family: "IBM Plex Mono", monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Camera Relay Licenses</h1>
+      <p>
+        The RVComp camera relay code in this repository is distributed under the MIT license.
+        This includes the relay service, browser assets, and the camera-side RTL developed in this project.
+      </p>
+      <ul>
+        <li>Included under MIT: repository-authored camera RTL, relay code, and browser UI.</li>
+        <li>Excluded from MIT coverage: vendor-generated IP such as Xilinx MIG and Clocking Wizard.</li>
+        <li>See the repository root <code>LICENSE</code> and <code>README.md</code> for the full project-level license notes.</li>
+      </ul>
+      <p><a href="/">Back to camera stream</a></p>
+    </div>
+  </div>
+</body>
+</html>

@@ -12,11 +12,18 @@ define RVCOMP_BOOTFILES_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/init $(TARGET_DIR)/init
 	$(INSTALL) -d -m 0755 $(TARGET_DIR)/etc/rvcomp/initramfs.d
 	rm -f \
+		$(TARGET_DIR)/etc/init.d/S13rv*camera \
+		$(TARGET_DIR)/etc/modules-load.d/rv*camera.conf \
 		$(TARGET_DIR)/etc/rvcomp/initramfs.d/S20-rvcomp-ethernet \
+		$(TARGET_DIR)/etc/rvcomp/initramfs.d/S25-rvcomp-camera \
 		$(TARGET_DIR)/etc/rvcomp/initramfs.d/S30-rvcomp-mmc-rootfs
 	if [ -n "$(BR2_PACKAGE_RVCOMP_ETHERNET)" ]; then \
 		$(INSTALL) -D -m 0755 $(@D)/S20-rvcomp-ethernet \
 			$(TARGET_DIR)/etc/rvcomp/initramfs.d/S20-rvcomp-ethernet; \
+	fi
+	if [ -n "$(BR2_PACKAGE_RVCOMP_CAMERA)" ]; then \
+		$(INSTALL) -D -m 0755 $(@D)/S25-rvcomp-camera \
+			$(TARGET_DIR)/etc/rvcomp/initramfs.d/S25-rvcomp-camera; \
 	fi
 	if [ -n "$(BR2_PACKAGE_RVCOMP_MMC)" ]; then \
 		$(INSTALL) -D -m 0755 $(@D)/S30-rvcomp-mmc-rootfs \

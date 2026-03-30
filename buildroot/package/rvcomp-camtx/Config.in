@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Copyright (c) 2026 Archlab, Science Tokyo
+
+config BR2_PACKAGE_RVCOMP_CAMTX
+	bool "rvcomp-camtx"
+	help
+	  Camera frame UDP sender for RVComp.
+
+	  cam_tx reads /dev/rvcomp_cam0 and transmits chunked Gray8 frames
+	  over UDP to a host relay.
