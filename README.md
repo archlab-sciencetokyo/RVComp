@@ -44,8 +44,6 @@ The following components follow their respective licenses; see the LICENSE file 
 - **Extensions**:
   - M extension: multiplication and division instructions
   - A extension: atomic instructions (LR/SC and AMO)
-  - S extension: supervisor mode
-  - U extension: user mode
   - Zicntr: counter access instructions
   - Zicsr: CSR access instructions
   - Zifencei: instruction-fetch fences
