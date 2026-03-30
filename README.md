@@ -67,8 +67,7 @@ Please download the following files from [the release page](https://github.com/a
 - `uart_nexys4ddr.bit`: Bitstream for Nexys 4 DDR (UART boot)
 
 **MMC boot (Nexys 4 DDR only):**
-- `fw_payload.bin`: Linux image for MMC boot
-- `rootfs.ext4`: Root filesystem image for MMC boot
+- `mmc_fw_payload.bin`: Linux image for MMC boot
 - `mmc_nexys4ddr.bit`: Bitstream for Nexys 4 DDR (MMC boot)
 
 ```{note}
