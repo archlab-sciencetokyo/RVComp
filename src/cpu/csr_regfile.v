@@ -83,6 +83,8 @@ module csr_regfile #(
     reg [`XLEN-1:0] mie_q               , mie_d                 ;
     reg [`XLEN-1:0] mtvec_q             , mtvec_d               ;
     reg       [2:0] mcounteren_q        , mcounteren_d          ;
+    reg [`XLEN-1:0] pmpcfg0_q           , pmpcfg0_d             ;
+    reg [`XLEN-1:0] pmpaddr0_q          , pmpaddr0_d            ;
 
     // machine trap handling
     reg [`XLEN-1:0] mscratch_q          , mscratch_d            ;
@@ -183,6 +185,8 @@ module csr_regfile #(
                                 8'h43   : csr_rdata         = mtval_q                               ;
                                 8'h44   : csr_rdata         = mip_q | (irq_i[1] << `IRQ_S_EXT)      ;
                                 8'h20   : csr_rdata         = {{(`XLEN-3){1'b0}}, mcountinhibit_q}  ;
+                                8'hA0   : csr_rdata         = pmpcfg0_q                             ; // pmpcfg0
+                                8'hB0   : csr_rdata         = pmpaddr0_q                            ; // pmpaddr0
                                 default : csr_access_exc    = 1'b1                                  ;
                             endcase
                         end
@@ -226,6 +230,17 @@ module csr_regfile #(
     wire            mret    = valid_i && sys_ctrl_i[`SYS_CTRL_MRET] ;
     wire            sret    = valid_i && sys_ctrl_i[`SYS_CTRL_SRET] ;
     reg [`XLEN-1:0] mask                                            ;
+    function automatic [31:0] normalize_mstatus_rv32;
+        input [31:0] mstatus_in;
+        reg   [31:0] mstatus_out;
+        begin
+            mstatus_out                 = mstatus_in;
+            mstatus_out[`MSTATUS_XS]    = 2'b00;
+            mstatus_out[`MSTATUS_VS]    = 2'b00;
+            mstatus_out[`MSTATUS_SD]    = (mstatus_out[`MSTATUS_FS] == 2'b11);
+            normalize_mstatus_rv32      = mstatus_out;
+        end
+    endfunction
 
     always @(*) begin
 
@@ -243,6 +258,8 @@ module csr_regfile #(
         mie_d           = mie_q             ;
         mtvec_d         = mtvec_q           ;
         mcounteren_d    = mcounteren_q      ;
+        pmpcfg0_d       = pmpcfg0_q         ;
+        pmpaddr0_d      = pmpaddr0_q        ;
         mscratch_d      = mscratch_q        ;
         mepc_d          = mepc_q            ;
         mcause_d        = mcause_q          ;
@@ -308,6 +325,8 @@ module csr_regfile #(
                 end
                 12'h305: mtvec_d                = {csr_wdata_i[`XLEN-1:2], 2'b00}                       ;
                 12'h306: mcounteren_d           = csr_wdata_i[2:0]                                      ;
+                12'h3a0: pmpcfg0_d              = csr_wdata_i                                           ; // pmpcfg0
+                12'h3b0: pmpaddr0_d             = csr_wdata_i                                           ; // pmpaddr0
                 12'h310: begin
                     mask                        = `MSTATUSH_WRITE_MASK                                  ;
                     mstatus_d[63:32]            = (mstatus_q[63:32] & ~mask) | (csr_wdata_i & mask)     ; // mstatush, RV32 only
@@ -398,6 +417,7 @@ module csr_regfile #(
                 mstatus_d[`MSTATUS_MDT]     = 1'b0                              ;
             end
         end
+        mstatus_d[`XLEN-1:0]   = normalize_mstatus_rv32(mstatus_d[`XLEN-1:0]);
 
         // trap vector
         trap_vector_base_o  = {mtvec_q[`XLEN-1:2], 2'b00}   ;
@@ -431,6 +451,8 @@ module csr_regfile #(
             mie_q           <= 'h0              ;
             mtvec_q         <= `RESET_VECTOR    ;
             mcounteren_q    <= 'h0              ;
+            pmpcfg0_q       <= 'h0              ;
+            pmpaddr0_q      <= 'h0              ;
             mscratch_q      <= 'h0              ;
             mepc_q          <= 'h0              ;
             mcause_q        <= 'h0              ;
@@ -454,6 +476,8 @@ module csr_regfile #(
             mie_q           <= mie_d            ;
             mtvec_q         <= mtvec_d          ;
             mcounteren_q    <= mcounteren_d     ;
+            pmpcfg0_q       <= pmpcfg0_d        ;
+            pmpaddr0_q      <= pmpaddr0_d       ;
             mscratch_q      <= mscratch_d       ;
             mepc_q          <= mepc_d           ;
             mcause_q        <= mcause_d         ;

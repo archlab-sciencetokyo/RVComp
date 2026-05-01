@@ -9,6 +9,7 @@ DOCKER_RUN_IT   := docker run --rm --init -it -v $(CURDIR):/workspace -e IN_DOCK
 DOCKER          ?= 1
 DOCKER_MODE     := $(strip $(DOCKER))
 DOCKER_ENABLED_VALUES := 1 true yes on
+MAKE_OVERRIDE_ARGS := $(strip $(MAKEOVERRIDES))
 
 # Targets requiring host tools (Vivado, USB/serial communication)
 NATIVE_TARGETS := \
@@ -27,36 +28,36 @@ ifeq (1,$(IN_DOCKER))
 
 # Inside Docker container: pass through to Makefile (prevents infinite loop)
 _docker_default:
-	$(MAKE) -f Makefile
+	$(MAKE) -f Makefile $(MAKE_OVERRIDE_ARGS)
 
 ifneq ($(MAKECMDGOALS),)
 .PHONY: $(MAKECMDGOALS)
 $(MAKECMDGOALS):
-	$(MAKE) -f Makefile $@
+	$(MAKE) -f Makefile $@ $(MAKE_OVERRIDE_ARGS)
 endif
 
 else ifneq ($(filter $(DOCKER_ENABLED_VALUES),$(DOCKER_MODE)),)
 
 # Docker enabled
 _docker_default:
-	$(DOCKER_RUN) make -f Makefile
+	$(DOCKER_RUN) make -f Makefile $(MAKE_OVERRIDE_ARGS)
 
 ifneq ($(MAKECMDGOALS),)
 .PHONY: $(MAKECMDGOALS)
 $(MAKECMDGOALS):
-	$(if $(filter $@,$(NATIVE_TARGETS)),$(MAKE) -f Makefile $@,$(if $(filter $@,$(INTERACTIVE_TARGETS)),$(DOCKER_RUN_IT) make -f Makefile $@,$(DOCKER_RUN) make -f Makefile $@))
+	$(if $(filter $@,$(NATIVE_TARGETS)),$(MAKE) -f Makefile $@ $(MAKE_OVERRIDE_ARGS),$(if $(filter $@,$(INTERACTIVE_TARGETS)),$(DOCKER_RUN_IT) make -f Makefile $@ $(MAKE_OVERRIDE_ARGS),$(DOCKER_RUN) make -f Makefile $@ $(MAKE_OVERRIDE_ARGS)))
 endif
 
 else
 
 # Docker disabled: delegate all targets to Makefile on host
 _docker_default:
-	$(MAKE) -f Makefile
+	$(MAKE) -f Makefile $(MAKE_OVERRIDE_ARGS)
 
 ifneq ($(MAKECMDGOALS),)
 .PHONY: $(MAKECMDGOALS)
 $(MAKECMDGOALS):
-	$(MAKE) -f Makefile $@
+	$(MAKE) -f Makefile $@ $(MAKE_OVERRIDE_ARGS)
 endif
 
 endif

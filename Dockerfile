@@ -1,6 +1,7 @@
-FROM ubuntu:24.04 AS base
+FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
-ARG JOBS=$(nproc)
+# you can specify the number of parallel jobs to speed up the build (not set: use all available cores)
+ARG JOBS=
 
 # Install build dependencies and tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,7 +18,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync tar unzip patch \
     && rm -rf /var/lib/apt/lists/*
 
-FROM base AS verilator
 # Install and build Verilator (version 5.034)
 ARG VERILATOR_TAG=v5.034
 RUN git clone --branch ${VERILATOR_TAG} \
@@ -26,13 +26,12 @@ RUN git clone --branch ${VERILATOR_TAG} \
     && unset VERILATOR_ROOT \
     && autoconf \
     && ./configure --prefix /opt/verilator \
-    && make -j${JOBS} \
+    && make -j"${JOBS:-$(nproc)}" \
     && make install \
     && rm -rf /tmp/verilator
 
 ENV PATH="/opt/verilator/bin:${PATH}"
 
-FROM verilator AS riscv-toolchain
 # Install and build RISC-V GNU Toolchain (version 2026.02.13 gnu-15.2.0)
 ARG RISCV=/opt/riscv
 ARG RISCV_TAG=2026.02.13
@@ -41,23 +40,21 @@ RUN git clone --branch ${RISCV_TAG} \
     && cd /tmp/riscv-toolchain \
     && ./configure --prefix=${RISCV} \
          --with-arch=rv32ima_zicntr_zicsr_zifencei --with-abi=ilp32 \
-    && make -j${JOBS} \
+    && make -j"${JOBS:-$(nproc)}" \
     && rm -rf /tmp/riscv-toolchain
 
 ENV PATH="/opt/riscv/bin:${PATH}"
 
-FROM riscv-toolchain AS spike
 # Install and build Spike
 RUN git clone https://github.com/riscv-software-src/riscv-isa-sim.git /tmp/spike \
     && cd /tmp/spike \
     && mkdir build && cd build \
     && ../configure --prefix=/opt/riscv \
          --with-target=riscv32-unknown-elf-gnu \
-    && make -j${JOBS} \
+    && make -j"${JOBS:-$(nproc)}" \
     && make install \
     && rm -rf /tmp/spike
 
-FROM spike AS final
 # Install UV
 RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
 

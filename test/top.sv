@@ -65,16 +65,16 @@ module top;
         end
     end
 
-    always_ff @(cb) begin
-        if (soc.axi_interconnect.rd_state_q==soc.axi_interconnect.RD_IDLE &&
-            soc.axi_interconnect.cpu_araddr_i[`PLEN-1:28] >= 'hc) begin
-                $display("READ access to undefined address %h\n", soc.axi_interconnect.cpu_araddr_i);
-                $display("mprv: %b, mpp: %b, priv_lvl_i: %b, satp[31]: %b", soc.mmu.mprv_i, soc.mmu.mpp_i, soc.cpu.priv_lvl, soc.mmu.satp_i[31]);
-                if (soc.mmu.priv_lvl_i != 2'b11) begin
-                    $finish(1);
-                end
-        end
-    end
+//    always_ff @(cb) begin
+//        if (soc.axi_interconnect.rd_state_q==soc.axi_interconnect.RD_IDLE &&
+//            soc.axi_interconnect.cpu_araddr_i[`PLEN-1:28] >= 'hc) begin
+//                $display("READ access to undefined address %h\n", soc.axi_interconnect.cpu_araddr_i);
+//                $display("mprv: %b, mpp: %b, priv_lvl_i: %b, satp[31]: %b", soc.mmu.mprv_i, soc.mmu.mpp_i, soc.cpu.priv_lvl, soc.mmu.satp_i[31]);
+//                if (soc.mmu.priv_lvl_i != 2'b11) begin
+//                    $finish(1);
+//                end
+//        end
+//    end
 
     // dump FST: Fast Signal Trace
     string trace_fst_file;
@@ -390,7 +390,7 @@ module top;
 
     always_ff @(cb) if (commit_log_on) begin
         if (load_done && !cpu_sim_fini && !soc.cpu.stall && soc.cpu.Wb_v && (soc.cpu.ExWb_ir!=`UNIMP)) begin
-            spike_commit_log(commit_log_fd, 0, soc.cpu.priv_lvl, soc.cpu.ExWb_pc, soc.cpu.ExWb_ir, soc.cpu.Wb_rf_we, soc.cpu.ExWb_rd, soc.cpu.Wb_rslt, dbus_re_q, dbus_raddr_q, dbus_we_q, dbus_waddr_q, dbus_wdata_q, dbus_wstrb_q, soc.cpu.csrs.csr_we_i, soc.cpu.csrs.csr_waddr_i, soc.cpu.csrs.csr_wdata_i);
+            spike_commit_log(commit_log_fd, 0, soc.cpu.priv_lvl, soc.cpu.ExWb_pc, soc.cpu.ExWb_ir, soc.cpu.Wb_rf_we, soc.cpu.ExWb_rd, soc.cpu.Wb_rslt, dbus_re_q, dbus_raddr_q, dbus_we_q, dbus_waddr_q, dbus_wdata_q, dbus_wstrb_q, soc.cpu.csrs.csr_we_i, soc.cpu.csrs.csr_waddr_i, soc.cpu.csrs.csr_wdata_i, soc.cpu.ExWb_sys_ctrl[`SYS_CTRL_MRET], soc.cpu.ExWb_sys_ctrl[`SYS_CTRL_SRET], soc.cpu.csrs.mstatus_d[31:0], soc.cpu.csrs.mstatus_d[63:32], soc.cpu.csrs.mie_d, (soc.cpu.csrs.mie_d & soc.cpu.csrs.mideleg_d), soc.cpu.csrs.mip_d);
         end
     end
 
@@ -450,15 +450,6 @@ module top;
     initial begin
         if ($value$plusargs("enable_debug_log=%d", enable_debug_log)) $write("enable debug log detected!!\n");
     end
-    // rvtest pass/fail
-    bit rvtest_mode;
-    initial begin
-        if ($value$plusargs("rvtest_mode=%d", rvtest_mode)) begin
-            $info("rvtest_mode=%d", rvtest_mode);
-        end
-    end
-    
-
 //    reg rsvd;
 //    always_ff @(cb) if (enable_debug_log) begin
 //        if ((rsvd==0) && (soc.dram_controller.rsvd_q==1)) $write("\033[0;1;36m[       debug]       load reseved detected!! time=[%12d], pc=[%08x], ir=[%08x], addr=[%08x]\033[0m\n", mtime, soc.cpu.ExWb_pc, soc.cpu.ExWb_ir, soc.bus_araddr);
@@ -634,13 +625,6 @@ module top;
         end
         // unimp
         if (soc.cpu.Wb_exc_valid && (soc.cpu.ExWb_ir==`UNIMP) && !soc.cpu.stall) begin
-            if (rvtest_mode) begin
-                if (soc.cpu.regs.xreg[10] == 32'd0) begin
-                    $write("\033[0;1;32mpass!!\033[0m\n");
-                end else begin
-                    $write("\033[0;1;31mfail!! a0=[%d]\033[0m\n", soc.cpu.regs.xreg[10]);
-                end
-            end
             $write("\033[0;1;32munimp detected!!\033[0m\n");
             $finish(1);
         end
@@ -750,17 +734,29 @@ function void spike_commit_log (
     input logic  [3:0] dbus_wstrb   ,
     input logic        csr_we       ,
     input logic [31:0] csr_waddr    ,
-    input logic [31:0] csr_wdata
+    input logic [31:0] csr_wdata    ,
+    input logic        is_mret      ,
+    input logic        is_sret      ,
+    input logic [31:0] mstatus      ,
+    input logic [31:0] mstatush     ,
+    input logic [31:0] mie          ,
+    input logic [31:0] sie          ,
+    input logic [31:0] mip
 );
 
     string       rd_s               ;
     logic  [2:0] dbus_wdata_size    ;
     string       dbus_wdata_s       ;
     string       csr_s              ;
+    logic [31:0] csr_wdata_disp     ;
     bit          illegal_csr_write  ;
+    logic [11:0] ir_csr             ;
+    bit          is_sc              ;
 
     if (rd < 10) rd_s = $sformatf("x%0d ", rd);
     else rd_s = $sformatf("x%0d", rd);
+    ir_csr = ir[31:20];
+    is_sc = (ir[6:0]==7'h2f) && (ir[31:27]==5'b00011);
 
     $fwrite(fd, "core%4d: %1d 0x%08x (0x%08x)", hartid, priv_lvl, pc, ir);
     if (|rf_we) begin
@@ -783,7 +779,7 @@ function void spike_commit_log (
         default : ;
     endcase
 
-    if (dbus_we) begin
+    if (dbus_we && !(is_sc && (|rf_wdata))) begin
         $fwrite(fd, " mem 0x%08x %s", dbus_waddr, dbus_wdata_s);
     end
 
@@ -821,8 +817,32 @@ function void spike_commit_log (
         12'h320: csr_s  = $sformatf("c%03d_mcountinhibit", csr_waddr)   ;
         default: illegal_csr_write = 1'b1                               ;
     endcase
+    csr_wdata_disp = csr_wdata;
+    if (csr_waddr==12'h100 || csr_waddr==12'h300) begin
+        csr_wdata_disp = mstatus;
+    end
+    if (csr_waddr==12'h310) begin
+        csr_wdata_disp = mstatush;
+    end
+    if (csr_waddr==12'h104 || csr_waddr==12'h304) begin
+        csr_wdata_disp = mie;
+    end
+    if (csr_waddr==12'h144 || csr_waddr==12'h344) begin
+        csr_wdata_disp = mip;
+    end
+    if (csr_we && !illegal_csr_write && ir_csr==12'h104) begin
+        $fwrite(fd, " c260_sie 0x%08x", sie);
+    end
+    if (csr_we && !illegal_csr_write && ir_csr==12'h144) begin
+        $fwrite(fd, " c777_mvip 0x%08x", 32'h0);
+    end
     if (csr_we && !illegal_csr_write) begin
-        $fwrite(fd, " %s 0x%08x", csr_s, csr_wdata);
+        $fwrite(fd, " %s 0x%08x", csr_s, csr_wdata_disp);
+    end
+    if (is_mret) begin
+        $fwrite(fd, " c768_mstatus 0x%08x c784_mstatush 0x%08x", mstatus, mstatush);
+    end else if (is_sret) begin
+        $fwrite(fd, " c768_mstatus 0x%08x", mstatus);
     end
 
     $fwrite(fd, "\n");

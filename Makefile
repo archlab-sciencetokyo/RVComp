@@ -8,14 +8,14 @@
 
 # User Setting Paths
 # For Simulation
-RISCV_PATH          :=
+
 # For FPGA
 vivado              := vivado                 # vivado path
+board_data_path     :=                        # board data path
 serial_number       :=                        # serial number
 ip_address          :=                        # ip address
 BAUD_RATE		    := 3000000               # baud rate for pyserial
 COM_PORT		    := /dev/ttyUSB1           # serial port for pyserial
-board_data_path     := $(shell pwd)/tools/XilinxBoardStore  # board data path
 
 
 DISPLAY_CYCLES      := 100000000 # display . every n cycles
@@ -32,6 +32,8 @@ NO_UART_BOOT        := 1 # 1: no uart boot, 0: uart boot　(uart boot needs a lo
 
 DIFF_SPIKE_TRACE    := 0 # trace and diff with spike
 RVCOM_TRACE         := 0 # trace only rvcom
+PYTEST_JOBS         ?= 1
+PYTEST_SO_ENABLE    ?= 0
 
 #TRACE_RF_FILE       := trace_rf.log
 #TRACE_RF_BEGIN      := 0
@@ -156,7 +158,6 @@ endif
 
 pyserial_flags        := --linux-boot --linux-file-path $(linux_image)
 
-RVTEST_MODE         ?= 0
 ifeq (1,$(DIFF_SPIKE_TRACE))
 DISPLAY_CYCLES      := 0
 ENABLE_DEBUG_LOG    := 0
@@ -222,7 +223,6 @@ plusargs            += $(if $(TRACE_RF_BEGIN),+trace_rf_begin=$(TRACE_RF_BEGIN))
 plusargs            += $(if $(TRACE_RF_END),+trace_rf_end=$(TRACE_RF_END))
 plusargs            += $(if $(TRACE_DMEM_FILE),+trace_dmem_file="$(log_dir)/$(TRACE_DMEM_FILE)")
 plusargs            += $(if $(filter $(ENABLE_DEBUG_LOG),1),+enable_debug_log=1)
-plusargs            += $(if $(filter $(RVTEST_MODE),1),+rvtest_mode=1)
 
 #===============================================================================
 # Vivado
@@ -279,7 +279,7 @@ $(diff_dir):
 	@mkdir -p $@
 
 #-------------------------------------------------------------------------------
-.PHONY: clean progclean vivadoclean distclean
+.PHONY: clean progclean vivadoclean distclean toolclean
 clean:
 	-rm -rf obj_dir/
 	-rm -rf $(log_dir)
@@ -317,8 +317,9 @@ vivadoclean:
 	fi
 
 toolclean:
-	-rm -rf tools/__pycache__
-	-rm -rf tools/.venv
+	-rm -rf tools/__pycache__/
+	-rm -rf tools/.venv/
+	-rm -rf tools/.pytest_cache/
 
 distclean: clean progclean vivadoclean toolclean
 
@@ -344,7 +345,7 @@ $2: $3 $$(log_dir) $$(diff_dir)
 	@echo rvcom
 	@echo ------------------------------------------------------------
 	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
-	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" COMMIT_LOG_FILE="$$@_rvcom_commit.log" RVTEST_MODE=$7 --no-print-directory
+	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" COMMIT_LOG_FILE="$$@_rvcom_commit.log" --no-print-directory
 	-@diff "$$(log_dir)/$$@_spike_commit.log" "$$(log_dir)/$$@_rvcom_commit.log" > $$(diff_dir)/$$@_commit_log.diff
 	@echo ------------------------------------------------------------
 	@echo
@@ -355,7 +356,7 @@ $2: $3 $$(log_dir)
 	@echo rvcom
 	@echo ------------------------------------------------------------
 	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
-	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" COMMIT_LOG_FILE="$$@_rvcom_commit.log" RVTEST_MODE=$7 --no-print-directory
+	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" COMMIT_LOG_FILE="$$@_rvcom_commit.log" --no-print-directory
 	@echo ------------------------------------------------------------
 	@echo
 else ifeq (1,$(SC_TRACE))
@@ -365,7 +366,7 @@ $2: $3 $$(log_dir)
 	@echo rvcom
 	@echo ------------------------------------------------------------
 	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
-	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" TRACE_SC_FILE="$$@_trace_sc.log" RVTEST_MODE=$7 --no-print-directory
+	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" TRACE_SC_FILE="$$@_trace_sc.log" --no-print-directory
 	@echo ------------------------------------------------------------
 	@echo
 else
@@ -376,9 +377,44 @@ $2: $3
 	@echo rvcom
 	@echo ------------------------------------------------------------
 	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
-	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" RVTEST_MODE=$7 --no-print-directory
+	@make run MEM_FILE="$3/$$@.128.hex" MAX_CYCLES="$6" --no-print-directory
 	@echo
 endif
+
+$3:
+	make XLEN=$$(XLEN) RISCV_ARCH=$$(RISCV_ARCH) RISCV_ABI=$$(RISCV_ABI) -C $4
+endef
+
+#===============================================================================
+# riscv-tests-diff-template
+#-------------------------------------------------------------------------------
+#                                $1           , $2           , $3                 , $4               , $5       , $6
+# $(eval $(call riscv-tests-diff-template, $program-name, @program-list, $program-target-dir, $program-root-dir, $ram-size, $max-cycles))
+define riscv-tests-diff-template
+.PHONY: $1 $2
+$1: $3 $$(log_dir) $$(diff_dir)
+	@echo $1
+	@echo --------------------------------------------------------------------------------
+	@echo rvcom build
+	@echo ------------------------------------------------------------
+	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
+	@echo spike and rvcom commit log compare
+	@echo ------------------------------------------------------------
+	-@PYTEST_SO_ENABLE="$$(PYTEST_SO_ENABLE)" RVCOM_TEST_CASES="$2" RVCOM_ELF_DIR="$3" RVCOM_MAX_CYCLES="$6" $$(uv) --project $$(pyserial_path) pytest tools/tests.py -n "$$(PYTEST_JOBS)" --color=yes $(if $(filter 1,$(PYTEST_SO_ENABLE)),-s,)
+	@echo ------------------------------------------------------------
+	@echo
+
+$2: $3 $$(log_dir) $$(diff_dir)
+	@echo $$@
+	@echo --------------------------------------------------------------------------------
+	@echo rvcom build
+	@echo ------------------------------------------------------------
+	@make build BIN_SIZE="$5" --no-print-directory > /dev/null
+	@echo spike and rvcom commit log compare
+	@echo ------------------------------------------------------------
+	-@PYTEST_SO_ENABLE="$$(PYTEST_SO_ENABLE)" RVCOM_TEST_CASES="$$@" RVCOM_ELF_DIR="$3" RVCOM_MAX_CYCLES="$6" $$(uv) --project $$(pyserial_path) pytest tools/tests.py -n "$$(PYTEST_JOBS)" --color=yes $(if $(filter 1,$(PYTEST_SO_ENABLE)),-s,)
+	@echo ------------------------------------------------------------
+	@echo
 
 $3:
 	make XLEN=$$(XLEN) RISCV_ARCH=$$(RISCV_ARCH) RISCV_ABI=$$(RISCV_ABI) -C $4
@@ -395,7 +431,8 @@ rv32ui_tests        := \
 	beq bge bgeu blt bltu bne jal jalr \
 	sb sh sw lb lbu lh lhu lw \
 	auipc lui \
-	fence_i ma_data
+	fence_i 
+# ma_data
 
 rv32um_tests        := \
 	mul mulh mulhsu mulhu \
@@ -407,7 +444,8 @@ rv32ua_tests        := \
 	lrsc
 
 rv32si_tests        := \
-	csr dirty ma_fetch scall sbreak wfi
+	csr ma_fetch scall sbreak wfi
+# dirty requires SV32 page-table dirty-bit behavior, which is disabled in direct DRAM mode.
 
 rv32mi_tests        := \
 	breakpoint csr mcsr illegal \
@@ -442,20 +480,32 @@ endif
 endif
 
 .PHONY: rv32ui_test rv32um_test rv32ua_test rv32si_test rv32mi_test
+ifeq (1,$(DIFF_SPIKE_TRACE))
+### $(eval $(call riscv-tests-diff-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles))
+$(eval $(call riscv-tests-diff-template,rv32ui_test,$(rv32ui_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ui,$(riscv-tests_dir),64*1024,1000000))
+$(eval $(call riscv-tests-diff-template,rv32um_test,$(rv32um_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32um,$(riscv-tests_dir),64*1024,1000000))
+$(eval $(call riscv-tests-diff-template,rv32ua_test,$(rv32ua_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ua,$(riscv-tests_dir),64*1024,1000000))
+ifeq (1,$(RVS))
+$(eval $(call riscv-tests-diff-template,rv32si_test,$(rv32si_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32si,$(riscv-tests_dir),64*1024,1000000))
+else
+$(eval $(call riscv-tests-diff-template,rv32mi_test,$(rv32mi_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32mi,$(riscv-tests_dir),64*1024,1000000))
+endif
+else
 rv32ui_test: $(rv32ui_$(TGT_ENV)_tests)
 rv32um_test: $(rv32um_$(TGT_ENV)_tests)
 rv32ua_test: $(rv32ua_$(TGT_ENV)_tests)
 rv32si_test: $(rv32si_$(TGT_ENV)_tests)
 rv32mi_test: $(rv32mi_$(TGT_ENV)_tests)
 
-### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles, $rvtest_mode))
-$(eval $(call result-template,rv32ui_test,$(rv32ui_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ui,$(riscv-tests_dir),64*1024,1000000,1))
-$(eval $(call result-template,rv32um_test,$(rv32um_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32um,$(riscv-tests_dir),64*1024,1000000,1))
-$(eval $(call result-template,rv32ua_test,$(rv32ua_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ua,$(riscv-tests_dir),64*1024,1000000,1))
+### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles))
+$(eval $(call result-template,rv32ui_test,$(rv32ui_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ui,$(riscv-tests_dir),64*1024,1000000))
+$(eval $(call result-template,rv32um_test,$(rv32um_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32um,$(riscv-tests_dir),64*1024,1000000))
+$(eval $(call result-template,rv32ua_test,$(rv32ua_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32ua,$(riscv-tests_dir),64*1024,1000000))
 ifeq (1,$(RVS))
-$(eval $(call result-template,rv32si_test,$(rv32si_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32si,$(riscv-tests_dir),64*1024,1000000,1))
+$(eval $(call result-template,rv32si_test,$(rv32si_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32si,$(riscv-tests_dir),64*1024,1000000))
 else
-$(eval $(call result-template,rv32mi_test,$(rv32mi_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32mi,$(riscv-tests_dir),64*1024,1000000,1))
+$(eval $(call result-template,rv32mi_test,$(rv32mi_$(TGT_ENV)_tests),$(riscv-tests_dir)/rv32mi,$(riscv-tests_dir),64*1024,1000000))
+endif
 endif
 
 ### alias
@@ -471,8 +521,8 @@ $(rv32mi_tests): %: rv32mi-$(TGT_ENV)-%
 # max-cycles:
 #     ITERATIONS=1  : 1000000
 #     ITERATIONS=100: 100000000
-### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles, $rvtest_mode))
-$(eval $(call result-template,cmark,coremark,$(coremark_dir)/$(RISCV_ARCH),$(coremark_dir),32*1024,10000000000,0))
+### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles))
+$(eval $(call result-template,cmark,coremark,$(coremark_dir)/$(RISCV_ARCH),$(coremark_dir),32*1024,10000000000))
 
 #===============================================================================
 # Embench-iot
@@ -482,8 +532,8 @@ embench             := \
 	nettle-aes nettle-sha256 nsichneu picojpeg primecount qrduino \
 	sglib-combined slre st statemate tarfind ud wikisort
 
-### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles, $rvtest_mode))
-$(eval $(call result-template,embench,$(embench),$(embench_dir)/$(RISCV_ARCH),$(embench_dir),128*1024,200000000,0))
+### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles))
+$(eval $(call result-template,embench,$(embench),$(embench_dir)/$(RISCV_ARCH),$(embench_dir),128*1024,200000000))
 
 #===============================================================================
 # rvtest
@@ -491,8 +541,8 @@ $(eval $(call result-template,embench,$(embench),$(embench_dir)/$(RISCV_ARCH),$(
 rvtest              := \
 	test
 
-### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles, $rvtest_mode))
-$(eval $(call result-template,rvtest,$(rvtest),$(rvtest_dir)/build,$(rvtest_dir),16*1024,20000000,0))
+### $(eval $(call result-template, $program-name, $program-list, $program-target-dir, $program-root-dir, $bin-size, $max-cycles))
+$(eval $(call result-template,rvtest,$(rvtest),$(rvtest_dir)/build,$(rvtest_dir),16*1024,20000000))
 
 #===============================================================================
 # OpenSBI/Linux/Buildroot
