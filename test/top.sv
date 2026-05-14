@@ -293,6 +293,14 @@ module top;
     end
 
     bit cpu_fini, cpu_sim_fini, soc_sim_fini;
+    bit tohost_write_seen;
+    wire commit_log_valid = load_done && !cpu_sim_fini && !soc_sim_fini &&
+                            !soc.cpu.stall && soc.cpu.Wb_v &&
+                            (soc.cpu.ExWb_ir!=`UNIMP);
+    wire tohost_base_write = dbus_we_q &&
+                             ((dbus_waddr_q==32'hffc01000) || (dbus_waddr_q==32'h80001000));
+    wire tohost_high_write = dbus_we_q &&
+                             ((dbus_waddr_q==32'hffc01004) || (dbus_waddr_q==32'h80001004));
 
     // counter
     longint unsigned mcycle, minstret;
@@ -302,6 +310,10 @@ module top;
         end
         if (load_done && !cpu_sim_fini && !soc.cpu.stall && soc.cpu.Wb_v) begin
             ++minstret;
+        end
+        if (cpu_sim_fini && !soc_sim_fini) begin
+            soc_sim_fini <= 1'b1;
+            $finish;
         end
     end
 
@@ -389,8 +401,21 @@ module top;
     end
 
     always_ff @(cb) if (commit_log_on) begin
-        if (load_done && !cpu_sim_fini && !soc.cpu.stall && soc.cpu.Wb_v && (soc.cpu.ExWb_ir!=`UNIMP)) begin
+        if (commit_log_valid) begin
             spike_commit_log(commit_log_fd, 0, soc.cpu.priv_lvl, soc.cpu.ExWb_pc, soc.cpu.ExWb_ir, soc.cpu.Wb_rf_we, soc.cpu.ExWb_rd, soc.cpu.Wb_rslt, dbus_re_q, dbus_raddr_q, dbus_we_q, dbus_waddr_q, dbus_wdata_q, dbus_wstrb_q, soc.cpu.csrs.csr_we_i, soc.cpu.csrs.csr_waddr_i, soc.cpu.csrs.csr_wdata_i, soc.cpu.ExWb_sys_ctrl[`SYS_CTRL_MRET], soc.cpu.ExWb_sys_ctrl[`SYS_CTRL_SRET], soc.cpu.csrs.mstatus_d[31:0], soc.cpu.csrs.mstatus_d[63:32], soc.cpu.csrs.mie_d, (soc.cpu.csrs.mie_d & soc.cpu.csrs.mideleg_d), soc.cpu.csrs.mip_d);
+        end
+    end
+
+    always_ff @(cb) begin
+        if (soc.rst) begin
+            tohost_write_seen <= 1'b0;
+        end else if (!cpu_sim_fini && commit_log_valid) begin
+            if (tohost_base_write && (dbus_wdata_q!=32'h0)) begin
+                tohost_write_seen <= 1'b1;
+            end
+            if (tohost_write_seen && tohost_high_write) begin
+                cpu_sim_fini <= 1'b1;
+            end
         end
     end
 

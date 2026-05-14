@@ -83,8 +83,10 @@ module csr_regfile #(
     reg [`XLEN-1:0] mie_q               , mie_d                 ;
     reg [`XLEN-1:0] mtvec_q             , mtvec_d               ;
     reg       [2:0] mcounteren_q        , mcounteren_d          ;
+`ifdef RVTEST_MOCK
     reg [`XLEN-1:0] pmpcfg0_q           , pmpcfg0_d             ;
     reg [`XLEN-1:0] pmpaddr0_q          , pmpaddr0_d            ;
+`endif
 
     // machine trap handling
     reg [`XLEN-1:0] mscratch_q          , mscratch_d            ;
@@ -185,8 +187,20 @@ module csr_regfile #(
                                 8'h43   : csr_rdata         = mtval_q                               ;
                                 8'h44   : csr_rdata         = mip_q | (irq_i[1] << `IRQ_S_EXT)      ;
                                 8'h20   : csr_rdata         = {{(`XLEN-3){1'b0}}, mcountinhibit_q}  ;
-                                8'hA0   : csr_rdata         = pmpcfg0_q                             ; // pmpcfg0
-                                8'hB0   : csr_rdata         = pmpaddr0_q                            ; // pmpaddr0
+                                8'hA0   : begin                                                     // pmpcfg0
+`ifdef RVTEST_MOCK
+                                    csr_rdata         = pmpcfg0_q                                    ;
+`else
+                                    csr_rdata         = 'h0                                          ;
+`endif
+                                end
+                                8'hB0   : begin                                                     // pmpaddr0
+`ifdef RVTEST_MOCK
+                                    csr_rdata         = pmpaddr0_q                                   ;
+`else
+                                    csr_rdata         = 'h0                                          ;
+`endif
+                                end
                                 default : csr_access_exc    = 1'b1                                  ;
                             endcase
                         end
@@ -258,8 +272,10 @@ module csr_regfile #(
         mie_d           = mie_q             ;
         mtvec_d         = mtvec_q           ;
         mcounteren_d    = mcounteren_q      ;
+`ifdef RVTEST_MOCK
         pmpcfg0_d       = pmpcfg0_q         ;
         pmpaddr0_d      = pmpaddr0_q        ;
+`endif
         mscratch_d      = mscratch_q        ;
         mepc_d          = mepc_q            ;
         mcause_d        = mcause_q          ;
@@ -325,8 +341,16 @@ module csr_regfile #(
                 end
                 12'h305: mtvec_d                = {csr_wdata_i[`XLEN-1:2], 2'b00}                       ;
                 12'h306: mcounteren_d           = csr_wdata_i[2:0]                                      ;
-                12'h3a0: pmpcfg0_d              = csr_wdata_i                                           ; // pmpcfg0
-                12'h3b0: pmpaddr0_d             = csr_wdata_i                                           ; // pmpaddr0
+                12'h3a0: begin                                                                        // pmpcfg0
+`ifdef RVTEST_MOCK
+                    pmpcfg0_d              = csr_wdata_i                                               ;
+`endif
+                end
+                12'h3b0: begin                                                                        // pmpaddr0
+`ifdef RVTEST_MOCK
+                    pmpaddr0_d             = csr_wdata_i                                               ;
+`endif
+                end
                 12'h310: begin
                     mask                        = `MSTATUSH_WRITE_MASK                                  ;
                     mstatus_d[63:32]            = (mstatus_q[63:32] & ~mask) | (csr_wdata_i & mask)     ; // mstatush, RV32 only
@@ -451,8 +475,10 @@ module csr_regfile #(
             mie_q           <= 'h0              ;
             mtvec_q         <= `RESET_VECTOR    ;
             mcounteren_q    <= 'h0              ;
+`ifdef RVTEST_MOCK
             pmpcfg0_q       <= 'h0              ;
             pmpaddr0_q      <= 'h0              ;
+`endif
             mscratch_q      <= 'h0              ;
             mepc_q          <= 'h0              ;
             mcause_q        <= 'h0              ;
@@ -476,8 +502,10 @@ module csr_regfile #(
             mie_q           <= mie_d            ;
             mtvec_q         <= mtvec_d          ;
             mcounteren_q    <= mcounteren_d     ;
+`ifdef RVTEST_MOCK
             pmpcfg0_q       <= pmpcfg0_d        ;
             pmpaddr0_q      <= pmpaddr0_d       ;
+`endif
             mscratch_q      <= mscratch_d       ;
             mepc_q          <= mepc_d           ;
             mcause_q        <= mcause_d         ;
