@@ -12,9 +12,12 @@
 /* Cache-backed RAM using card storage as backing store */
 /******************************************************************************************/
 module sdcram #(
-    parameter CACHE_DEPTH    = 8   , // number of cache lines
-    parameter BLOCK_NUM      = 1   , // number of 512-byte blocks per cache line
-    parameter POLLING_CYCLES = 1024  // cycles between dirty line write-back checks
+    parameter CACHE_DEPTH             = 8   , // number of cache lines
+    parameter BLOCK_NUM               = 1   , // number of 512-byte blocks per cache line
+    parameter POLLING_CYCLES          = 1024, // cycles between dirty line write-back checks
+    parameter SYS_CLK_FREQ_MHZ        = 100 , // system clock frequency
+    parameter SD_INPUT_CLK_FREQ_MHZ   = 50  , // clock driving the SD-side cache port
+    parameter FILL_SETTLE_SD_CYCLES   = 2     // physical SD-clock cycles to wait after fill
 ) (
     input  wire        sys_clk_i      , // system clock
     input  wire        sys_rst_i      , // system reset
@@ -25,7 +28,10 @@ module sdcram #(
     input  wire        sdcram_ren_i   , // read enable
     input  wire [ 3:0] sdcram_wen_i   , // write enable (byte-wise)
     input  wire [31:0] sdcram_wdata_i , // write data
+    output wire        sdcram_req_ready_o, // request ready
     output wire [31:0] sdcram_rdata_o , // read data
+    output wire        sdcram_rvalid_o, // read data valid
+    input  wire        sdcram_rready_i, // read data ready
     output wire        sdcram_busy_o  , // busy (operation in progress)
     // debug
     output wire [ 3:0] sdcram_state_o , // main state machine state
@@ -54,6 +60,7 @@ module sdcram #(
     localparam POLLING     = 4'd6;
     localparam CLEAN_TAG   = 4'd7;
     localparam FLUSH       = 4'd8;
+    localparam SETTLE      = 4'd9;
 
 //==============================================================================
 // Interface signals
@@ -80,10 +87,19 @@ module sdcram #(
     wire [31:0] cc_cache_din ;
     wire [31:0] cc_cache_dout;
     wire        cc_cache_en  ;
+    wire        cc_cache_dout_valid;
+    wire        cc_cache_read_valid;
 
 //==============================================================================
 // Request/reply FIFO signals
 //------------------------------------------------------------------------------
+    localparam integer FILL_SETTLE_SYS_CYCLES_RAW =
+        ((SYS_CLK_FREQ_MHZ * FILL_SETTLE_SD_CYCLES * 2) + SD_INPUT_CLK_FREQ_MHZ - 1) /
+        SD_INPUT_CLK_FREQ_MHZ;
+    localparam integer FILL_SETTLE_SYS_CYCLES =
+        (FILL_SETTLE_SYS_CYCLES_RAW > 0) ? FILL_SETTLE_SYS_CYCLES_RAW : 1;
+    localparam integer SETTLE_CNT_WIDTH = $clog2(FILL_SETTLE_SYS_CYCLES + 1);
+
     wire        req_wen     ;
     wire [41:0] req_wdata   ;
     wire        req_ren     ;
@@ -150,6 +166,12 @@ module sdcram #(
     reg  [31:0] sdcram_wdata_d ;
     reg  [ 3:0] sdcram_wen_q   ;
     reg  [ 3:0] sdcram_wen_d   ;
+    reg  [31:0] rdata_hold_q    ;
+    reg  [31:0] rdata_hold_d    ;
+    reg         rvalid_hold_q   ;
+    reg         rvalid_hold_d   ;
+    reg  [SETTLE_CNT_WIDTH-1:0] settle_cnt_q;
+    reg  [SETTLE_CNT_WIDTH-1:0] settle_cnt_d;
 
 //==============================================================================
 // Polling registers
@@ -263,20 +285,22 @@ module sdcram #(
         .RAM_PERFORMANCE("LOW_LATENCY"                 ),
         .INIT_FILE      (""                            )
     ) cache_ram (
-        .clka_i  (sys_clk_i                                                         ), // input  wire
-        .clkb_i  (sd_clk_i                                                          ), // input  wire
-        .rsta_i  (sys_rst_i                                                         ), // input  wire
-        .rstb_i  (sd_rst_i                                                          ), // input  wire
-        .ena_i   (cc_cache_en                                                       ), // input  wire
-        .enb_i   (sdi_cache_en                                                      ), // input  wire
-        .wea_i   (cc_cache_wen                                                      ), // input  wire                   [3:0]
-        .web_i   (sdi_cache_wen                                                     ), // input  wire                   [3:0]
-        .addra_i (cc_cache_adr[8+$clog2(CACHE_DEPTH)+$clog2(BLOCK_NUM):2]          ), // input  wire   [ADDR_WIDTH-1:0]
-        .addrb_i (sdi_cache_adr[8+$clog2(CACHE_DEPTH)+$clog2(BLOCK_NUM):2]         ), // input  wire   [ADDR_WIDTH-1:0]
-        .dina_i  (cc_cache_din                                                      ), // input  wire   [DATA_WIDTH-1:0]
-        .dinb_i  (sdi_cache_din                                                     ), // input  wire   [DATA_WIDTH-1:0]
-        .douta_o (cc_cache_dout                                                     ), // output wire   [DATA_WIDTH-1:0]
-        .doutb_o (sdi_cache_dout                                                    )  // output wire   [DATA_WIDTH-1:0]
+        .clka_i         (sys_clk_i                                                         ), // input  wire
+        .clkb_i         (sd_clk_i                                                          ), // input  wire
+        .rsta_i         (sys_rst_i                                                         ), // input  wire
+        .rstb_i         (sd_rst_i                                                          ), // input  wire
+        .ena_i          (cc_cache_en                                                       ), // input  wire
+        .enb_i          (sdi_cache_en                                                      ), // input  wire
+        .wea_i          (cc_cache_wen                                                      ), // input  wire                   [3:0]
+        .web_i          (sdi_cache_wen                                                     ), // input  wire                   [3:0]
+        .addra_i        (cc_cache_adr[8+$clog2(CACHE_DEPTH)+$clog2(BLOCK_NUM):2]          ), // input  wire   [ADDR_WIDTH-1:0]
+        .addrb_i        (sdi_cache_adr[8+$clog2(CACHE_DEPTH)+$clog2(BLOCK_NUM):2]         ), // input  wire   [ADDR_WIDTH-1:0]
+        .dina_i         (cc_cache_din                                                      ), // input  wire   [DATA_WIDTH-1:0]
+        .dinb_i         (sdi_cache_din                                                     ), // input  wire   [DATA_WIDTH-1:0]
+        .douta_o        (cc_cache_dout                                                     ), // output wire   [DATA_WIDTH-1:0]
+        .douta_valid_o  (cc_cache_dout_valid                                               ), // output wire
+        .doutb_o        (sdi_cache_dout                                                    ), // output wire   [DATA_WIDTH-1:0]
+        .doutb_valid_o  (                                                                   )  // output wire
     );
 
 //==============================================================================
@@ -315,15 +339,19 @@ module sdcram #(
     assign cc_cache_adr = sdcram_addr_q;
     assign cc_cache_wen = ((state_q == SET_TAG) && ct_hit_o && ct_valid_o) ? sdcram_wen_q : 4'h0;
     assign cc_cache_din = sdcram_wdata_q;
-    assign cc_cache_en  = (state_q != WAIT);
+    assign cc_cache_en  = (state_q == SET_TAG);
+    assign cc_cache_read_valid = cc_cache_dout_valid && (sdcram_wen_q == 4'h0);
 
 //==============================================================================
 // Output assignments
 //------------------------------------------------------------------------------
-    assign sdcram_rdata_o = cc_cache_dout    ;
-    assign sdcram_busy_o  = (state_q != IDLE);
-    assign sdcram_state_o = state_q          ;
-    assign flush_busy_o   = (states_q[3:0] == FLUSH) || (states_q[7:4] == FLUSH) || (states_q[11:8] == FLUSH);
+    // Bypass a response on arrival; hold it only when it is not accepted.
+    assign sdcram_rdata_o     = rvalid_hold_q ? rdata_hold_q : cc_cache_dout;
+    assign sdcram_rvalid_o    = rvalid_hold_q || cc_cache_read_valid;
+    assign sdcram_req_ready_o = (state_q == IDLE) && !sdcram_rvalid_o;
+    assign sdcram_busy_o      = (state_q != IDLE) || sdcram_rvalid_o;
+    assign sdcram_state_o     = state_q;
+    assign flush_busy_o       = (states_q[3:0] == FLUSH) || (states_q[7:4] == FLUSH) || (states_q[11:8] == FLUSH);
 
 //==============================================================================
 // Request FIFO interface
@@ -342,6 +370,7 @@ module sdcram #(
 //------------------------------------------------------------------------------
     wire sdi_ready = !req_full ;
     wire sdi_ack   = !ack_empty;
+    wire ack_rw    = ack_rdata[41];
 
     assign ack_ren = sdi_ack && (state_q == WAIT);
 
@@ -358,10 +387,27 @@ module sdcram #(
         sdcram_addr_d  = sdcram_addr_q ;
         sdcram_wdata_d = sdcram_wdata_q;
         sdcram_wen_d   = sdcram_wen_q  ;
+        rdata_hold_d   = rdata_hold_q  ;
+        rvalid_hold_d  = rvalid_hold_q ;
+        settle_cnt_d   = settle_cnt_q  ;
         pcnt_d         = pcnt_q        ;
         pblk_d         = pblk_q        ;
         ptag_d         = ptag_q        ;
         flush_line_d   = flush_line_q  ;
+
+        // The BRAM valid signal is a pulse. Retain an unconsumed response without
+        // adding a cycle when valid and ready are asserted together.
+        if (rvalid_hold_q) begin
+            if (sdcram_rready_i) begin
+                rvalid_hold_d = cc_cache_read_valid;
+                if (cc_cache_read_valid) begin
+                    rdata_hold_d = cc_cache_dout;
+                end
+            end
+        end else if (cc_cache_read_valid && !sdcram_rready_i) begin
+            rdata_hold_d  = cc_cache_dout;
+            rvalid_hold_d = 1'b1;
+        end
 
         case (state_q)
             INIT: begin
@@ -376,6 +422,7 @@ module sdcram #(
                 sdcram_wdata_d = 32'h0;
                 sdcram_wen_d   = 4'h0;
                 flush_line_d   = {(PBLK_WIDTH+1){1'b0}};
+                settle_cnt_d   = {SETTLE_CNT_WIDTH{1'b0}};
             end
 
             IDLE: begin
@@ -384,7 +431,9 @@ module sdcram #(
                 sdcram_wdata_d = sdcram_wdata_i;
                 sdcram_wen_d   = sdcram_wen_i  ;
 
-                if (sdcram_ren_i || (sdcram_wen_i != 4'h0)) begin
+                if (sdcram_rvalid_o) begin
+                    pcnt_d = pcnt_q;
+                end else if (sdcram_ren_i || (sdcram_wen_i != 4'h0)) begin
                     case ({ct_valid_o, ct_hit_o, ct_dirty_o})
                         3'b000, 3'b001, 3'b010, 3'b011, 3'b100: begin
                             states_d = {IDLE, SET_TAG, READ_BLOCK};
@@ -437,8 +486,21 @@ module sdcram #(
                 req_wen_d  = 1'b0  ;
                 req_data_d = 42'h0 ;
                 if (sdi_ack) begin
-                    states_d   = {IDLE, states_q[11:4]};
                     rep_data_d = ack_rdata;
+                    if (ack_rw) begin
+                        states_d = {IDLE, states_q[11:4]};
+                    end else begin
+                        states_d     = {states_q[11:4], SETTLE};
+                        settle_cnt_d = FILL_SETTLE_SYS_CYCLES - 1;
+                    end
+                end
+            end
+
+            SETTLE: begin
+                if (settle_cnt_q == {SETTLE_CNT_WIDTH{1'b0}}) begin
+                    states_d = {IDLE, states_q[11:4]};
+                end else begin
+                    settle_cnt_d = settle_cnt_q - 1'b1;
                 end
             end
 
@@ -496,6 +558,9 @@ module sdcram #(
             sdcram_addr_q  <= 41'h0             ;
             sdcram_wdata_q <= 32'h0             ;
             sdcram_wen_q   <= 4'h0              ;
+            rdata_hold_q   <= 32'h0             ;
+            rvalid_hold_q  <= 1'b0              ;
+            settle_cnt_q   <= {SETTLE_CNT_WIDTH{1'b0}};
             pcnt_q         <= {PCNT_WIDTH{1'b0}};
             pblk_q         <= {PBLK_WIDTH{1'b0}};
             ptag_q         <= {PTAG_WIDTH{1'b0}};
@@ -509,6 +574,9 @@ module sdcram #(
             sdcram_addr_q  <= sdcram_addr_d ;
             sdcram_wdata_q <= sdcram_wdata_d;
             sdcram_wen_q   <= sdcram_wen_d  ;
+            rdata_hold_q   <= rdata_hold_d  ;
+            rvalid_hold_q  <= rvalid_hold_d ;
+            settle_cnt_q   <= settle_cnt_d  ;
             pcnt_q         <= pcnt_d        ;
             pblk_q         <= pblk_d        ;
             ptag_q         <= ptag_d        ;

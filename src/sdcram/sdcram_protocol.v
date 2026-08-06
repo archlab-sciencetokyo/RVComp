@@ -95,6 +95,8 @@ module sdcram_protocol(
     localparam [4:0] WAIT_WRT = 5'd6;
     localparam [4:0] WAIT_INI = 5'd7;
     localparam [4:0] WAIT_STP = 5'd8;
+    localparam [4:0] EXEC_RD  = 5'd9;
+    localparam [4:0] WAIT_RD  = 5'd10;
 
     localparam [4:0] CMD00 = 5'd16;
     localparam [4:0] CMD08 = 5'd17;
@@ -225,6 +227,21 @@ module sdcram_protocol(
                 trans_funct_d = TRANS_IDLE;
                 if (dat_trans_o_ready && (trans_funct_q != TRANS_BWAIT)) begin
                     state_d = IDLE;
+                end
+            end
+
+            EXEC_RD: begin
+                if (dat_trans_o_ready) begin
+                    trans_funct_d   = TRANS_READ;
+                    trans_blk_num_d = blk_cnt_q;
+                    state_d         = WAIT_RD;
+                end
+            end
+
+            WAIT_RD: begin
+                trans_funct_d = TRANS_IDLE;
+                if (dat_trans_o_ready && (trans_funct_q != TRANS_READ)) begin
+                    state_d = (cmd_no_q == 6'd17) ? IDLE : CMD12;
                 end
             end
 
@@ -360,10 +377,8 @@ module sdcram_protocol(
                     cmd_no_d       = 6'd17;
                     cmd_en_d       = 1'b1;
                     cmd_arg_d      = blk_adr_q;
-                    trans_funct_d  = TRANS_READ;
-                    trans_blk_num_d= blk_cnt_q;
                     state_d        = EXEC_CMD;
-                    return_state_d = WAIT_TRS;
+                    return_state_d = EXEC_RD;
                 end
             end
 
@@ -372,10 +387,8 @@ module sdcram_protocol(
                     cmd_no_d       = 6'd18;
                     cmd_en_d       = 1'b1;
                     cmd_arg_d      = blk_adr_q;
-                    trans_funct_d  = TRANS_READ;
-                    trans_blk_num_d= blk_cnt_q;
                     state_d        = EXEC_CMD;
-                    return_state_d = CMD12;
+                    return_state_d = EXEC_RD;
                 end
             end
 

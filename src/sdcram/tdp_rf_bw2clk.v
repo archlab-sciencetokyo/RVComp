@@ -21,8 +21,8 @@ module tdp_rf_bw2clk #(
 ) (
     input  wire                     clka_i          , // port A clock
     input  wire                     clkb_i          , // port B clock
-    input  wire                     rsta_i          , // port A reset (used only for output register)
-    input  wire                     rstb_i          , // port B reset (used only for output register)
+    input  wire                     rsta_i          , // port A reset for read-valid/output register
+    input  wire                     rstb_i          , // port B reset for read-valid/output register
     input  wire                     ena_i           , // port A enable
     input  wire                     enb_i           , // port B enable
     input  wire       [NB_COL-1:0]  wea_i           , // port A write enable (per byte)
@@ -32,7 +32,9 @@ module tdp_rf_bw2clk #(
     input  wire   [DATA_WIDTH-1:0]  dina_i          , // port A write data
     input  wire   [DATA_WIDTH-1:0]  dinb_i          , // port B write data
     output wire   [DATA_WIDTH-1:0]  douta_o         , // port A read data
-    output wire   [DATA_WIDTH-1:0]  doutb_o           // port B read data
+    output wire                     douta_valid_o   , // port A read data valid
+    output wire   [DATA_WIDTH-1:0]  doutb_o         , // port B read data
+    output wire                     doutb_valid_o     // port B read data valid
 );
 
     ///// DRC: design rule check
@@ -52,6 +54,8 @@ module tdp_rf_bw2clk #(
 /* verilator lint_on MULTIDRIVEN */
     reg [DATA_WIDTH-1:0] ram_data_a_q   = {DATA_WIDTH{1'b0}}                   ;
     reg [DATA_WIDTH-1:0] ram_data_b_q   = {DATA_WIDTH{1'b0}}                   ;
+    reg                  ram_valid_a_q  = 1'b0                                  ;
+    reg                  ram_valid_b_q  = 1'b0                                  ;
 
 //==============================================================================
 // Initialization
@@ -74,8 +78,13 @@ module tdp_rf_bw2clk #(
 //------------------------------------------------------------------------------
     ///// port A read
     always @(posedge clka_i) begin
-        if (ena_i) begin
-            ram_data_a_q <= ram[addra_i];
+        if (rsta_i) begin
+            ram_valid_a_q <= 1'b0;
+        end else begin
+            ram_valid_a_q <= ena_i;
+            if (ena_i) begin
+                ram_data_a_q <= ram[addra_i];
+            end
         end
     end
 
@@ -96,8 +105,13 @@ module tdp_rf_bw2clk #(
 //------------------------------------------------------------------------------
     ///// port B read
     always @(posedge clkb_i) begin
-        if (enb_i) begin
-            ram_data_b_q <= ram[addrb_i];
+        if (rstb_i) begin
+            ram_valid_b_q <= 1'b0;
+        end else begin
+            ram_valid_b_q <= enb_i;
+            if (enb_i) begin
+                ram_data_b_q <= ram[addrb_i];
+            end
         end
     end
 
@@ -119,31 +133,41 @@ module tdp_rf_bw2clk #(
     generate
         if (RAM_PERFORMANCE == "LOW_LATENCY") begin: no_output_register
             ///// direct output (1 cycle latency)
-            assign douta_o = ram_data_a_q;
-            assign doutb_o = ram_data_b_q;
+            assign douta_o       = ram_data_a_q ;
+            assign douta_valid_o = ram_valid_a_q;
+            assign doutb_o       = ram_data_b_q ;
+            assign doutb_valid_o = ram_valid_b_q;
         end else begin: output_register
             ///// additional output register (2 cycle latency, better timing)
             reg [DATA_WIDTH-1:0] douta_q = {DATA_WIDTH{1'b0}}  ;
             reg [DATA_WIDTH-1:0] doutb_q = {DATA_WIDTH{1'b0}}  ;
+            reg                  douta_valid_q = 1'b0           ;
+            reg                  doutb_valid_q = 1'b0           ;
 
             always @(posedge clka_i) begin
                 if (rsta_i) begin
-                    douta_q <= {DATA_WIDTH{1'b0}}  ;
+                    douta_q       <= {DATA_WIDTH{1'b0}}  ;
+                    douta_valid_q <= 1'b0                 ;
                 end else begin
-                    douta_q <= ram_data_a_q        ;
+                    douta_q       <= ram_data_a_q         ;
+                    douta_valid_q <= ram_valid_a_q        ;
                 end
             end
 
             always @(posedge clkb_i) begin
                 if (rstb_i) begin
-                    doutb_q <= {DATA_WIDTH{1'b0}}  ;
+                    doutb_q       <= {DATA_WIDTH{1'b0}}  ;
+                    doutb_valid_q <= 1'b0                 ;
                 end else begin
-                    doutb_q <= ram_data_b_q        ;
+                    doutb_q       <= ram_data_b_q         ;
+                    doutb_valid_q <= ram_valid_b_q        ;
                 end
             end
 
-            assign douta_o = douta_q;
-            assign doutb_o = doutb_q;
+            assign douta_o       = douta_q      ;
+            assign douta_valid_o = douta_valid_q;
+            assign doutb_o       = doutb_q      ;
+            assign doutb_valid_o = doutb_valid_q;
         end
     endgenerate
 

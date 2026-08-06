@@ -81,6 +81,7 @@ module soc (
     wire ui_rst, locked_1        ;
     wire clk_50mhz, locked_2     ;
     wire eth_refclk_int          ;
+    wire pll_rst                 ;
     ///// input buffer
     IBUF ibuf_clk (
         .I (clk_i   ), // input  clk_i   : 100 MHz
@@ -91,10 +92,11 @@ module soc (
         .I (clk_ibuf), // input  clk_ibuf: 100 MHz
         .O (clk_bufg)  // output clk_bufg: 100 MHz
     );
+    assign pll_rst = !rst_ni;
     ///// clock generation
     clk_wiz_1 clk_wiz_1 (
         .clk_out1    (clk      ), // output wire clk     : `CLK_FREQ_MHZ
-        .reset       (ui_rst   ), // input  wire reset   : dram reset
+        .reset       (pll_rst  ), // input  wire reset   : board/system reset
         .locked      (locked_1 ), // output wire locked
         .clk_in1     (clk_bufg )  // input  wire clk_bufg: 100 MHz
     );
@@ -102,7 +104,7 @@ module soc (
     clk_wiz_2 clk_wiz_2 (
         .clk_out1    (clk_50mhz      ), // output wire clk_50mhz     : 50 MHz
         .clk_out2    (eth_refclk_int ), // output wire clk_phy_90deg : 50 MHz 90 degree phase shift for PHY
-        .reset       (ui_rst         ), // input  wire reset         : dram reset
+        .reset       (pll_rst        ), // input  wire reset         : board/system reset
         .locked      (locked_2       ), // output wire locked
         .clk_in1     (clk_bufg       )  // input  wire clk_bufg: 100 MHz
     );
