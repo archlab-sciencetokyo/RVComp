@@ -1,6 +1,6 @@
 [project]
 name = "rvcomp-tools"
-version = "1.1.1"
+version = "2.0.1"
 description = "RVComp development tools"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 term = "term:main"
+findport = "find_serial_ports:main"
 setting = "setting:main"
 cliconfig = "setting:cli_main"
 

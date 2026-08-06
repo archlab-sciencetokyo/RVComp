@@ -13,26 +13,146 @@ from collections import deque
 import platform
 import os
 import subprocess
-from typing import Optional, Any
+from typing import Callable, Optional, Any
 from tqdm import tqdm
-from readkeys import getch, getkey
-from readchar import key as keys
-from typing import Callable
+from readkeys import getch
 
 # Platform-specific imports for terminal mode management only
 if platform.system() == 'Windows':
     import ctypes
     from ctypes import wintypes
     import msvcrt
+    STD_INPUT_HANDLE = -10
+    STD_OUTPUT_HANDLE = -11
     ENABLE_PROCESSED_INPUT = 0x0001
     ENABLE_LINE_INPUT = 0x0002
     ENABLE_ECHO_INPUT = 0x0004
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 else:
     import termios
     import tty
 
 load_file = 0 # Flag
 lock = threading.Lock() # Lock for load_file access
+store_ack = threading.Semaphore(0)
+
+EXIT_SEQUENCE = '\x03:q'
+LOAD_SIGNAL = b'!\n'
+LINUX_SD_STORE_CHUNK_SIZE = 4096
+LINUX_SD_STORE_SIZE = 167772160
+FNV1A32_OFFSET = 0x811C9DC5
+FNV1A32_PRIME = 0x01000193
+SERIAL_IO_POLL_INTERVAL = 0.01
+SERIAL_THREAD_JOIN_TIMEOUT = 1.0
+
+WINDOWS_EXTENDED_KEY_PREFIXES = ('\x00', '\xe0')
+WINDOWS_NAV_CODES = {
+    'H': '\x1b[A',   # Up
+    'P': '\x1b[B',   # Down
+    'K': '\x1b[D',   # Left
+    'M': '\x1b[C',   # Right
+    'G': '\x1b[H',   # Home
+    'O': '\x1b[F',   # End
+    'R': '\x1b[2~',  # Insert
+    'S': '\x1b[3~',  # Delete
+    'I': '\x1b[5~',  # Page up
+    'Q': '\x1b[6~',  # Page down
+}
+WINDOWS_FN_CODES = {
+    ';': '\x1bOP',
+    '<': '\x1bOQ',
+    '=': '\x1bOR',
+    '>': '\x1bOS',
+    '?': '\x1b[15~',
+    '@': '\x1b[17~',
+    'A': '\x1b[18~',
+    'B': '\x1b[19~',
+    'C': '\x1b[20~',
+    'D': '\x1b[21~',
+}
+
+def normalize_windows_key(first: str, read_next: Callable[[], str]) -> Optional[str]:
+    """
+    Translate Windows console scan-code keys to the VT sequences expected by
+    Linux shells and line editors on the serial side.
+    """
+    if first not in WINDOWS_EXTENDED_KEY_PREFIXES:
+        return first
+
+    code = read_next()
+    if first == '\x00':
+        return WINDOWS_FN_CODES.get(code)
+    return WINDOWS_NAV_CODES.get(code)
+
+def read_console_key(nonblock: bool = False) -> Optional[str]:
+    """Read one console key, normalized for serial transmission."""
+    if platform.system() == 'Windows':
+        if nonblock and not msvcrt.kbhit():
+            return None
+        return normalize_windows_key(msvcrt.getwch(), msvcrt.getwch)
+
+    data = getch(NONBLOCK=nonblock, encoding=None, raw=False)
+    return data or None
+
+def encode_serial_key(key: Optional[str]) -> Optional[bytes]:
+    """Encode a normalized console key for the serial port."""
+    if not key:
+        return None
+    return key.encode('utf-8')
+
+def update_exit_queue(que: deque[str], key: str) -> bool:
+    """Return True once Ctrl+C followed by :q has been typed."""
+    for char in key:
+        que.append(char)
+        if ''.join(que) == EXIT_SEQUENCE:
+            return True
+    return False
+
+def write_stdout_bytes(data: bytes) -> None:
+    """Write serial output bytes without Python text newline translation."""
+    if not data:
+        return
+    try:
+        os.write(sys.stdout.fileno(), data)
+    except (AttributeError, OSError, ValueError):
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.flush()
+        else:
+            sys.stdout.write(data.decode('utf-8', errors='replace'))
+            sys.stdout.flush()
+
+def count_load_signals(pending: bytes, data: bytes) -> tuple[int, bytes]:
+    """Count complete bootrom load signals, preserving a split trailing byte."""
+    scan = pending + data
+    keep = len(LOAD_SIGNAL) - 1
+    return scan.count(LOAD_SIGNAL), scan[-keep:] if keep else b''
+
+def split_load_signals(pending: bytes, data: bytes) -> tuple[int, bytes, bytes]:
+    """Remove bootrom ACKs from visible output while counting them."""
+    scan = pending + data
+    visible = bytearray()
+    count = 0
+    index = 0
+
+    while index < len(scan):
+        if scan.startswith(LOAD_SIGNAL, index):
+            count += 1
+            index += len(LOAD_SIGNAL)
+            continue
+        if scan[index:index + 1] == LOAD_SIGNAL[:1] and index == len(scan) - 1:
+            return count, scan[index:], bytes(visible)
+        visible.append(scan[index])
+        index += 1
+
+    return count, b'', bytes(visible)
+
+def fnv1a32_update(hash_value: int, data: bytes) -> int:
+    """Update a 32-bit FNV-1a checksum."""
+    for byte in data:
+        hash_value ^= byte
+        hash_value = (hash_value * FNV1A32_PRIME) & 0xFFFFFFFF
+    return hash_value
 
 def flush_input_buffer_windows() -> None:
     """
@@ -43,24 +163,14 @@ def flush_input_buffer_windows() -> None:
     if platform.system() == 'Windows':
         # Clear all pending characters from the input buffer
         while msvcrt.kbhit():
-            msvcrt.getch()
+            msvcrt.getwch()
 
-        # Also flush using readkeys if available to clear its internal buffer
-        try:
-            # Read and discard any buffered input from readkeys
-            while True:
-                data = getch(NONBLOCK=True, encoding=None)
-                if not data:
-                    break
-        except:
-            pass
-
-def set_windows_console_mode() -> Optional[int]:
+def set_windows_console_mode() -> Optional[Any]:
     """
     Disable Windows console input processing to allow Ctrl+C to be read as a character.
 
     Returns:
-        The original console mode, or None if setting failed.
+        The original console settings, or None if setting failed.
     """
     if platform.system() != 'Windows':
         return None
@@ -68,22 +178,36 @@ def set_windows_console_mode() -> Optional[int]:
     try:
         # Get stdin handle
         kernel32 = ctypes.windll.kernel32
-        stdin_handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        stdin_handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        stdout_handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
 
         # Get current mode
-        old_mode = wintypes.DWORD()
-        kernel32.GetConsoleMode(stdin_handle, ctypes.byref(old_mode))
+        old_input_mode = wintypes.DWORD()
+        old_output_mode = wintypes.DWORD()
+        kernel32.GetConsoleMode(stdin_handle, ctypes.byref(old_input_mode))
+        have_output_mode = bool(kernel32.GetConsoleMode(stdout_handle, ctypes.byref(old_output_mode)))
+        old_input_cp = kernel32.GetConsoleCP()
+        old_output_cp = kernel32.GetConsoleOutputCP()
 
         # Disable processed input, line input, and echo
-        new_mode = old_mode.value & ~(ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
-        kernel32.SetConsoleMode(stdin_handle, new_mode)
+        new_input_mode = old_input_mode.value & ~(ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
+        kernel32.SetConsoleMode(stdin_handle, new_input_mode)
+        kernel32.SetConsoleCP(65001)
+        kernel32.SetConsoleOutputCP(65001)
+        if have_output_mode:
+            kernel32.SetConsoleMode(stdout_handle, old_output_mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
 
-        return old_mode.value
+        return {
+            'input_mode': old_input_mode.value,
+            'output_mode': old_output_mode.value if have_output_mode else None,
+            'input_cp': old_input_cp,
+            'output_cp': old_output_cp,
+        }
     except Exception as e:
         print(f"Warning: Could not set Windows console mode: {e}")
         return None
 
-def restore_windows_console_mode(old_mode: Optional[int]) -> None:
+def restore_windows_console_mode(old_mode: Optional[Any]) -> None:
     """
     Restore Windows console mode to its original state.
 
@@ -95,40 +219,140 @@ def restore_windows_console_mode(old_mode: Optional[int]) -> None:
 
     try:
         kernel32 = ctypes.windll.kernel32
-        stdin_handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
-        kernel32.SetConsoleMode(stdin_handle, old_mode)
+        stdin_handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        stdout_handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        if isinstance(old_mode, dict):
+            kernel32.SetConsoleMode(stdin_handle, old_mode['input_mode'])
+            if old_mode.get('output_mode') is not None:
+                kernel32.SetConsoleMode(stdout_handle, old_mode['output_mode'])
+            kernel32.SetConsoleCP(old_mode['input_cp'])
+            kernel32.SetConsoleOutputCP(old_mode['output_cp'])
+        else:
+            kernel32.SetConsoleMode(stdin_handle, old_mode)
     except Exception as e:
         print(f"Warning: Could not restore Windows console mode: {e}")
 
-def cleanup(port: Optional[serial.Serial], old_settings: Optional[Any]) -> None:
-    """"
+def signal_serial_error(source: str, error: BaseException,
+                        stop_event: Optional[threading.Event],
+                        error_event: Optional[threading.Event]) -> None:
+    """Stop the current I/O session and mark it for exit status 1."""
+    already_reported = error_event is not None and error_event.is_set()
+    if not already_reported:
+        print(
+            f"\r\nError in {source}: "
+            f"{type(error).__name__}: {error}",
+            end='\r\n',
+            flush=True,
+        )
+    if error_event is not None:
+        error_event.set()
+    if stop_event is not None:
+        stop_event.set()
+
+
+def close_serial_port(port: Optional[serial.Serial], announce: bool = True) -> bool:
+    """Close a serial port without aborting a concurrent write via PurgeComm."""
+    if port is None:
+        return True
+    try:
+        was_open = bool(port.is_open)
+    except Exception:
+        was_open = True
+    if not was_open:
+        return True
+
+    closed = True
+    try:
+        port.close()
+    except Exception as e:
+        closed = False
+        # A disconnected Windows device can retain is_open=True while its
+        # underlying HANDLE is already invalid. Terminal restoration must
+        # still proceed in that case.
+        print(f"\r\nWarning: Could not close serial port cleanly: {e}", end='\r\n')
+    if announce:
+        print("\r\nSerial port closed.", end='\r\n')
+    return closed
+
+
+def stop_serial_threads(port: Optional[serial.Serial], stop_event: threading.Event,
+                        threads: list[threading.Thread]) -> bool:
+    """Cancel pending serial I/O and return whether both workers stopped."""
+    stop_event.set()
+    cancel_failed = False
+    if port is not None:
+        for method_name in ('cancel_read', 'cancel_write'):
+            method = getattr(port, method_name, None)
+            if method is None:
+                continue
+            try:
+                method()
+            except Exception as e:
+                cancel_failed = True
+                print(f"\r\nWarning: Could not {method_name}: {e}", end='\r\n')
+
+    current_thread = threading.current_thread()
+    for thread in threads:
+        if thread is not current_thread and thread.is_alive():
+            thread.join(timeout=SERIAL_THREAD_JOIN_TIMEOUT)
+
+    remaining = [
+        thread for thread in threads
+        if thread is not current_thread and thread.is_alive()
+    ]
+    if remaining:
+        # Closing is the last-resort unblock for a driver that ignored the
+        # cancel request. The stop event prevents either worker from starting
+        # another operation on this handle.
+        if not close_serial_port(port, announce=False):
+            cancel_failed = True
+        for thread in remaining:
+            thread.join(timeout=SERIAL_THREAD_JOIN_TIMEOUT)
+
+    stopped = not cancel_failed and all(
+        thread is current_thread or not thread.is_alive()
+        for thread in threads
+    )
+    if not stopped:
+        print(
+            "\r\nWarning: Serial worker did not stop.",
+            end='\r\n',
+        )
+    return stopped
+
+
+def cleanup(port: Optional[serial.Serial], old_settings: Optional[Any]) -> bool:
+    """
     Restore terminal settings and close the serial port.
 
     Args:
         port: The serial port object to close.
         old_settings: The terminal settings to restore (Unix/Linux only, or Windows console mode).
     """
-    if port and port.is_open:
-        time.sleep(0.1)
-        port.reset_input_buffer()
-        port.reset_output_buffer()
-        port.close()
-        print("\r\nSerial port closed.", end='\r\n')
-
-    # Flush Windows input buffer after port is closed
-    flush_input_buffer_windows()
-
-    if old_settings:
-        if platform.system() == 'Windows':
-            restore_windows_console_mode(old_settings)
-        else:
-            fd = sys.stdin.fileno()
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    if old_settings:
-        print("Terminal settings restored.", end='\r\n')
+    success = close_serial_port(port)
+    try:
+        # Flush pending Windows console input after the serial port closes.
+        flush_input_buffer_windows()
+    except Exception as e:
+        success = False
+        print(f"Warning: Could not flush console input: {e}", end='\r\n')
+    finally:
+        if old_settings:
+            if platform.system() == 'Windows':
+                restore_windows_console_mode(old_settings)
+            else:
+                fd = sys.stdin.fileno()
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            print("Terminal settings restored.", end='\r\n')
+    return success
 
 def serial_write(port: serial.Serial, load_event: bool = False,
-                 filepath: Optional[str] = None, baudrate: int = 115200) -> None:
+                 filepath: Optional[str] = None, baudrate: int = 115200,
+                 linux_sd_store: bool = False,
+                 store_size: Optional[int] = None,
+                 store_chunk_size: int = LINUX_SD_STORE_CHUNK_SIZE,
+                 stop_event: Optional[threading.Event] = None,
+                 error_event: Optional[threading.Event] = None) -> None:
     """
     Read from stdin and write to the serial port (unified cross-platform version using readkeys).
 
@@ -137,86 +361,130 @@ def serial_write(port: serial.Serial, load_event: bool = False,
         load_event: Is Linux boot mode enabled?
         filepath: Optional path to file to send when load is detected.
         baudrate: Baud rate for calculating chunk size.
+        linux_sd_store: Send one chunk per bootrom store ACK.
+        store_size: Expected store image size in bytes.
+        store_chunk_size: Bytes sent for each bootrom store ACK.
+        stop_event: Stops this I/O session when set.
+        error_event: Set when main must exit with status 1.
     """
     que = deque(maxlen=3)
-    byte_buffer = bytearray()
 
     def write_check_and_send(nonblock: bool = False) -> bool:
-        nonlocal byte_buffer
         try:
-            # Read raw bytes first
-            if platform.system() == 'Windows':
-                raw_data = getch(NONBLOCK=nonblock, encoding=None)
-            else:
-                raw_data = getch(NONBLOCK=nonblock, encoding=None, raw=False)
-            if not raw_data:
-                return False
-
-            # If we get a string (should not happen with encoding=None, but just in case)
-            if isinstance(raw_data, str):
-                data = raw_data
-            else:
-                byte_buffer.extend(raw_data)
-
-                # Try to decode as UTF-8
-                try:
-                    data = byte_buffer.decode('utf-8')
-                    byte_buffer.clear()  # Success, clear buffer
-                except UnicodeDecodeError:
-                    # Incomplete sequence, wait for more bytes
-                    if len(byte_buffer) > 4:
-                        byte_buffer.clear()  # Clear invalid data
-                    return False
-
-            # Check for exit command
-            que.append(data)
-            if ''.join(que) == '\x03:q':
-                return True
-
-            # Send to serial port
-            port.write(data.encode('utf-8'))
+            key = read_console_key(nonblock=nonblock)
         except Exception as e:
-            print(f"\r\nError in serial_write: {type(e).__name__}: {e}", end='', flush=True)
-            byte_buffer.clear()
+            signal_serial_error('serial_write', e, stop_event, error_event)
+            return True
+
+        if not key:
             return False
+
+        # Check for exit command
+        if update_exit_queue(que, key):
+            if stop_event is not None:
+                stop_event.set()
+            return True
+
+        if stop_event is not None and stop_event.is_set():
+            return True
+
+        # Send to serial port. Every exception terminates the process with
+        # status 1 after main has stopped both workers and restored the console.
+        data = encode_serial_key(key)
+        if data:
+            try:
+                port.write(data)
+            except serial.SerialTimeoutException as e:
+                signal_serial_error('serial_write', e, stop_event, error_event)
+                return True
+            except (serial.SerialException, OSError) as e:
+                signal_serial_error('serial_write', e, stop_event, error_event)
+                return True
+            except Exception as e:
+                signal_serial_error('serial_write', e, stop_event, error_event)
+                return True
         return False
 
     if load_event:
         global load_file, lock
 
+        if linux_sd_store:
+            success = send_file_on_acks(
+                port,
+                filepath,
+                store_size,
+                store_chunk_size,
+                stop_event,
+                error_event,
+            )
+            if not success:
+                if stop_event is not None and not stop_event.is_set():
+                    stop_event.set()
+                return
+            if stop_event is not None:
+                stop_event.set()
+            return
+
         # Load event mode: check for load signal while handling input
-        while True:
+        while stop_event is None or not stop_event.is_set():
             with lock:
                 if load_file:
                     time.sleep(0.1)
-                    success = send_file(port, filepath, baudrate)
+                    success = send_file(
+                        port,
+                        filepath,
+                        baudrate,
+                        stop_event,
+                        error_event,
+                    )
                     if not success:
+                        if stop_event is not None and not stop_event.is_set():
+                            stop_event.set()
                         return
                     break
 
             # Use nonblock mode but with longer sleep for stability
             if write_check_and_send(nonblock=True):
                 return
-            time.sleep(0.01) 
+            if stop_event is not None:
+                stop_event.wait(SERIAL_IO_POLL_INTERVAL)
+            else:
+                time.sleep(SERIAL_IO_POLL_INTERVAL)
 
-    # Normal mode: use blocking for best input handling
-    while True:
-        if write_check_and_send(nonblock=False):
-            return
+    if stop_event is None or platform.system() != 'Windows':
+        # Preserve blocking console input for standalone calls and POSIX.
+        while stop_event is None or not stop_event.is_set():
+            if write_check_and_send(nonblock=False):
+                return
+    else:
+        # Polling lets main stop and join the Windows console thread before it
+        # closes the serial HANDLE.
+        while not stop_event.is_set():
+            if write_check_and_send(nonblock=True):
+                return
+            stop_event.wait(SERIAL_IO_POLL_INTERVAL)
 
-def serial_read(port: serial.Serial, load_event: bool = False) -> None:
+def serial_read(port: serial.Serial, load_event: bool = False,
+                linux_sd_store: bool = False,
+                stop_event: Optional[threading.Event] = None,
+                error_event: Optional[threading.Event] = None) -> None:
     """
     Read from the serial port and print to stdout.
     
     Args:
         port: The serial port object to read data from.
         load_event: Is Linux boot mode enabled?
+        linux_sd_store: Treat every load signal as a chunk ACK.
+        stop_event: Stops this I/O session when set.
+        error_event: Set when main must exit with status 1.
     """
     # Load detection phase
     if load_event:
         global load_file
         global lock
-        while port and port.is_open:
+        pending_signal = b''
+        while (port and port.is_open and
+               (stop_event is None or not stop_event.is_set())):
             try:
                 # Blocking read: waits up to port.timeout (0.1s), zero CPU when idle
                 data_bytes = port.read(1)
@@ -226,21 +494,27 @@ def serial_read(port: serial.Serial, load_event: bool = False) -> None:
                 remaining = port.in_waiting
                 if remaining > 0:
                     data_bytes += port.read(remaining)
-                received_data = data_bytes.decode('utf-8', errors='ignore')
-                print(received_data, end="", flush=True)
-                if '!\x0a' in received_data: 
+                if linux_sd_store:
+                    signal_count, pending_signal, visible_data = split_load_signals(pending_signal, data_bytes)
+                    write_stdout_bytes(visible_data)
+                    for _ in range(signal_count):
+                        store_ack.release()
+                    continue
+
+                write_stdout_bytes(data_bytes)
+                signal_count, pending_signal = count_load_signals(pending_signal, data_bytes)
+                if signal_count:
                     time.sleep(0.1)
                     print("\r\nDetected load signal. Preparing to send file...")
                     with lock:
                         load_file = 1
                     break
-            except (serial.SerialException, OSError):
-                break
             except Exception as e:
-                print(f"\r\nError in serial_read: {e}")
+                signal_serial_error('serial_read', e, stop_event, error_event)
                 break
     # Interactive read loop
-    while port and port.is_open:
+    while (port and port.is_open and
+           (stop_event is None or not stop_event.is_set())):
         try:
             # Blocking read: waits up to port.timeout (0.1s), zero CPU when idle
             data_bytes = port.read(1)
@@ -250,15 +524,14 @@ def serial_read(port: serial.Serial, load_event: bool = False) -> None:
             remaining = port.in_waiting
             if remaining > 0:
                 data_bytes += port.read(remaining)
-            received_data = data_bytes.decode('utf-8', errors='ignore')
-            print(received_data, end="", flush=True)
-        except (serial.SerialException, OSError):
-            break
+            write_stdout_bytes(data_bytes)
         except Exception as e:
-            print(f"\r\nError in serial_read: {e}")
+            signal_serial_error('serial_read', e, stop_event, error_event)
             break
 
-def send_file(port: serial.Serial, filepath: str, baudrate: int = 115200) -> bool:
+def send_file(port: serial.Serial, filepath: str, baudrate: int = 115200,
+              stop_event: Optional[threading.Event] = None,
+              error_event: Optional[threading.Event] = None) -> bool:
     """
     Send a binary file through the serial port with progress bar.
 
@@ -266,6 +539,8 @@ def send_file(port: serial.Serial, filepath: str, baudrate: int = 115200) -> boo
         port: The serial port object to write data to.
         filepath: Path to the binary file to send.
         baudrate: Baud rate to calculate optimal chunk size (default: 115200).
+        stop_event: Stops the transfer when set.
+        error_event: Set when main must exit with status 1.
 
     Returns:
         True if file was sent successfully, False if aborted or error occurred.
@@ -277,11 +552,12 @@ def send_file(port: serial.Serial, filepath: str, baudrate: int = 115200) -> boo
         print(f"File size: {file_size} bytes\r\n", end='', flush=True)
         print(f"Chunk size: {chunk_size} bytes (based on {baudrate} baud)\r\n", end='', flush=True)
         que = deque(maxlen=3)
-        byte_buffer = bytearray()
 
         with open(filepath, 'rb') as f:
             with tqdm(total=file_size, unit='B', unit_scale=True, unit_divisor=1024, desc="Sending") as pbar:
                 while True:
+                    if stop_event is not None and stop_event.is_set():
+                        return False
                     chunk = f.read(chunk_size)
                     if not chunk:
                         break
@@ -289,43 +565,91 @@ def send_file(port: serial.Serial, filepath: str, baudrate: int = 115200) -> boo
                     pbar.update(len(chunk))
                     # User abort check (Ctrl+C:q) sampling 5 times per chunk
                     for _ in range(5):
-                        try:
-                            # Windows doesn't support 'raw' parameter, use platform-specific call
-                            if platform.system() == 'Windows':
-                                raw_data = getch(NONBLOCK=True, encoding=None)
-                            else:
-                                raw_data = getch(NONBLOCK=True, encoding=None, raw=False)
-                            if not raw_data:
-                                break
+                        key = read_console_key(nonblock=True)
+                        if not key:
+                            break
 
-                            if isinstance(raw_data, str):
-                                data = raw_data
-                            else:
-                                byte_buffer.extend(raw_data)
-                                try:
-                                    data = byte_buffer.decode('utf-8')
-                                    byte_buffer.clear()
-                                except UnicodeDecodeError:
-                                    if len(byte_buffer) > 4:
-                                        byte_buffer.clear()
-                                    continue
-
-                            que.append(data)
-                            if ''.join(que) == '\x03:q':
-                                print("\r\nFile transfer aborted by user.")
-                                port.flush()
-                                return False
-                        except Exception as e:
-                            print(f"Error checking for abort: {e}")
-                            byte_buffer.clear()
-                            continue
+                        if update_exit_queue(que, key):
+                            print("\r\nFile transfer aborted by user.")
+                            if stop_event is not None:
+                                stop_event.set()
+                            port.flush()
+                            return False
 
                 port.flush()
 
         print("\r\nFile sent successfully.")
         return True
     except Exception as e:
-        print(f"\r\nError sending file: {e}")
+        signal_serial_error('send_file', e, stop_event, error_event)
+        return False
+
+def wait_for_store_ack(que: deque[str],
+                       stop_event: Optional[threading.Event] = None) -> bool:
+    """Wait for one bootrom ACK while still allowing Ctrl+C:q abort."""
+    while stop_event is None or not stop_event.is_set():
+        if store_ack.acquire(timeout=0.05):
+            return True
+        key = read_console_key(nonblock=True)
+        if key and update_exit_queue(que, key):
+            print("\r\nFile transfer aborted by user.")
+            if stop_event is not None:
+                stop_event.set()
+            return False
+    return False
+
+def send_file_on_acks(port: serial.Serial, filepath: Optional[str],
+                      expected_size: Optional[int],
+                      chunk_size: int = LINUX_SD_STORE_CHUNK_SIZE,
+                      stop_event: Optional[threading.Event] = None,
+                      error_event: Optional[threading.Event] = None) -> bool:
+    """
+    Send a binary file one chunk at a time after bootrom ACKs.
+
+    This keeps the board's UART RX FIFO from filling while bootrom waits for
+    SD card reads or dirty-line write-backs.
+    """
+    if filepath is None:
+        print("\r\nError sending file: no filepath specified")
+        return False
+
+    try:
+        file_size = os.path.getsize(filepath)
+        if expected_size is not None and file_size != expected_size:
+            print(
+                f"\r\nError: file size {file_size} bytes does not match "
+                f"expected store size {expected_size} bytes."
+            )
+            return False
+
+        print(f"\r\nSending file to SD: {filepath}\r\n", end='', flush=True)
+        print(f"File size: {file_size} bytes\r\n", end='', flush=True)
+        print(f"Chunk size: {chunk_size} bytes per bootrom ACK\r\n", end='', flush=True)
+        que = deque(maxlen=3)
+        sent = 0
+        hash_value = FNV1A32_OFFSET
+
+        with open(filepath, 'rb') as f:
+            with tqdm(total=file_size, unit='B', unit_scale=True, unit_divisor=1024, desc="Sending") as pbar:
+                while sent < file_size:
+                    if not wait_for_store_ack(que, stop_event):
+                        port.flush()
+                        return False
+
+                    chunk = f.read(min(chunk_size, file_size - sent))
+                    if not chunk:
+                        break
+
+                    port.write(chunk)
+                    port.flush()
+                    sent += len(chunk)
+                    hash_value = fnv1a32_update(hash_value, chunk)
+                    pbar.update(len(chunk))
+
+        print(f"\r\nFile sent successfully. fnv1a32=0x{hash_value:08X}")
+        return sent == file_size
+    except Exception as e:
+        signal_serial_error('send_file_on_acks', e, stop_event, error_event)
         return False
 
 def port_open(portname: str, baudrate: int, bytesize: int, parity: str, 
@@ -461,71 +785,109 @@ def main() -> None:
                         help='Write timeout in seconds')
     parser.add_argument('-i', '--inter-byte-timeout', type=make_checker("Inter-Byte Timeout", 0, float), default=None,
                         help='Inter-byte timeout in seconds')
-    parser.add_argument('-f', '--linux-file-path', type=str, default='../image/fw_payload.bin',
+    parser.add_argument('-f', '--file-path',
+                        dest='linux_file_path', type=str, default='../image/fw_payload.bin',
                         help='Relative path of linux file to send')
     parser.add_argument('-l', '--linux-boot', action='store_true',
                         help='Linux boot mode: send linux file after detecting load')
+    parser.add_argument('--linux-sd-store', action='store_true',
+                        help='Send linux file to bootrom SD store mode, one 4 KiB chunk per ACK')
+    parser.add_argument('--linux-store-size', type=make_checker("Linux Store Size", 0, int),
+                        default=LINUX_SD_STORE_SIZE, metavar="bytes",
+                        help='Expected linux file size for SD store mode')
+    parser.add_argument('--linux-store-chunk-size', type=make_checker("Linux Store Chunk Size", 0, int),
+                        default=LINUX_SD_STORE_CHUNK_SIZE, metavar="bytes",
+                        help='Bytes to send for each SD store ACK')
     parser.add_argument('--bitstream-load', type=str, default=None, choices=[None, 'local', 'remote'],
                         help='Bitstream load method: local or remote')
     args = parser.parse_args()
+    load_mode = args.linux_boot or args.linux_sd_store
 
     # Get the full path to fw_payload.bin
     script_dir = os.path.dirname(os.path.abspath(__file__))
     fw_payload_path = os.path.join(script_dir, args.linux_file_path)
     fw_payload_path = os.path.abspath(fw_payload_path)
-    if args.linux_boot and not os.path.exists(fw_payload_path):
+    if load_mode and not os.path.exists(fw_payload_path):
         print(f"Error: File not found at {fw_payload_path}.", file=sys.stderr)
-        exit(1)
-    if args.linux_boot:
-        print("Linux boot mode: waiting for load to send fw_payload.bin...")
+        sys.exit(1)
+    if load_mode:
+        if args.linux_sd_store:
+            print("Linux SD store mode: waiting for bootrom ACKs to send fw_payload.bin...")
+        else:
+            print("Linux boot mode: waiting for load to send fw_payload.bin...")
         print(f"File to send: {fw_payload_path}")
     port = port_open(args.port, args.baudrate, args.bytesize, args.parity, 
                      args.stopbits, args.rtscts, args.xonxoff, args.dsrdtr,
                      args.write_timeout, args.inter_byte_timeout)
 
-    if args.linux_boot and not os.path.exists(fw_payload_path):
-        print(f"Warning: fw_payload.bin not found at {fw_payload_path}. Linux boot mode will fail if used.")
-        exit(1)
-
-    if port:
-        old_settings = None
-        if platform.system() == 'Windows':
-            old_settings = set_windows_console_mode()
-        else:
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-            tty.setraw(fd)
-
-        try:
-            thread_read = None
-            thread_write = None
-            thread_load = None
-
-            if args.linux_boot:
-                thread_read = threading.Thread(target=serial_read, args=(port, True), daemon=True)
-                thread_write = threading.Thread(target=serial_write, args=(port, True, fw_payload_path, args.baudrate), daemon=True)
-            else:
-                # Normal mode: bidirectional communication
-                thread_read = threading.Thread(target=serial_read, args=(port, False), daemon=True)
-                thread_write = threading.Thread(target=serial_write, args=(port, False, None, args.baudrate), daemon=True)
-
-            if args.bitstream_load is not None:
-                thread_load = threading.Thread(target=bit_load, args=(args.bitstream_load,), daemon=True)
-
-            thread_read.start()
-            thread_write.start()
-            if thread_load:
-                thread_load.start()
-
-            while thread_read.is_alive() and thread_write.is_alive():
-                time.sleep(0.1)
-
-        except KeyboardInterrupt:
-            pass
-        finally:
-            cleanup(port, old_settings)
-    else:
+    if not port:
         print("Exiting due to port open failure.")
+        sys.exit(1)
+
+    old_settings = None
+    if platform.system() == 'Windows':
+        old_settings = set_windows_console_mode()
+    else:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setraw(fd)
+
+    stop_event = threading.Event()
+    error_event = threading.Event()
+    thread_read = threading.Thread(
+        target=serial_read,
+        args=(port,),
+        kwargs={
+            'load_event': load_mode,
+            'linux_sd_store': args.linux_sd_store,
+            'stop_event': stop_event,
+            'error_event': error_event,
+        },
+        daemon=True,
+    )
+    thread_write = threading.Thread(
+        target=serial_write,
+        args=(port,),
+        kwargs={
+            'load_event': load_mode,
+            'filepath': fw_payload_path if load_mode else None,
+            'baudrate': args.baudrate,
+            'linux_sd_store': args.linux_sd_store,
+            'store_size': args.linux_store_size,
+            'store_chunk_size': args.linux_store_chunk_size,
+            'stop_event': stop_event,
+            'error_event': error_event,
+        },
+        daemon=True,
+    )
+
+    try:
+        if args.bitstream_load is not None:
+            threading.Thread(
+                target=bit_load,
+                args=(args.bitstream_load,),
+                daemon=True,
+            ).start()
+
+        thread_read.start()
+        thread_write.start()
+        while thread_read.is_alive() and thread_write.is_alive():
+            if stop_event.wait(0.1):
+                break
+        if not stop_event.is_set():
+            stop_event.set()
+    except KeyboardInterrupt:
+        stop_event.set()
+    except Exception as e:
+        signal_serial_error('main', e, stop_event, error_event)
+    finally:
+        if not stop_serial_threads(port, stop_event, [thread_read, thread_write]):
+            error_event.set()
+        if not cleanup(port, old_settings):
+            error_event.set()
+
+    if error_event.is_set():
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
