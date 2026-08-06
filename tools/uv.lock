@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-07-30T08:57:40.35176742Z"
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -118,7 +118,7 @@ wheels = [
 
 [[package]]
 name = "rvcomp-tools"
-version = "1.1.1"
+version = "2.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "pyserial" },

@@ -58,6 +58,7 @@ module sdcram_dat_transceiver(
     reg [ 7:0] o_data_q, o_data_d;
     reg        o_data_en_q, o_data_en_d;
     reg        o_data_ready_q, o_data_ready_d;
+    reg        dat_idle_seen_q, dat_idle_seen_d;
 
 //==============================================================================
 // Outputs and tri-state
@@ -135,6 +136,7 @@ module sdcram_dat_transceiver(
         o_data_d       = o_data_q;
         o_data_en_d    = o_data_en_q;
         o_data_ready_d = o_data_ready_q;
+        dat_idle_seen_d = dat_idle_seen_q;
 
         case (state_q)
             IDLE: begin
@@ -142,8 +144,9 @@ module sdcram_dat_transceiver(
                 o_data_ready_d = 1'b0;
                 case (i_funct)
                     2'b01: begin
-                        state_d   = WAIT_DAT;
-                        blk_cnt_d = i_blk_num;
+                        state_d         = WAIT_DAT;
+                        blk_cnt_d       = i_blk_num;
+                        dat_idle_seen_d = 1'b0;
                     end
                     2'b10: begin
                         state_d   = TX_INI;
@@ -162,10 +165,13 @@ module sdcram_dat_transceiver(
             WAIT_DAT: begin
                 o_data_en_d    = 1'b0;
                 o_data_ready_d = 1'b0;
-                if (sd_clk && (sd_dat[0] == 1'b0)) begin
-                    dat_cnt_d = 16'd1039; // 512*2 + 16 - 1
-                    blk_cnt_d = blk_cnt_q - 1'b1;
-                    state_d   = RX_DAT;
+                if (sd_clk && (sd_dat == 4'b1111)) begin
+                    dat_idle_seen_d = 1'b1;
+                end else if (sd_clk && dat_idle_seen_q && (sd_dat == 4'b0000)) begin
+                    dat_cnt_d       = 16'd1039; // 512*2 + 16 - 1
+                    blk_cnt_d       = blk_cnt_q - 1'b1;
+                    dat_idle_seen_d = 1'b0;
+                    state_d         = RX_DAT;
                 end
             end
 
@@ -308,6 +314,7 @@ module sdcram_dat_transceiver(
             o_data_q       <= 8'd0;
             o_data_en_q    <= 1'b0;
             o_data_ready_q <= 1'b0;
+            dat_idle_seen_q <= 1'b0;
         end else begin
             state_q        <= state_d;
             rsp_out_q      <= rsp_out_d;
@@ -323,6 +330,7 @@ module sdcram_dat_transceiver(
             o_data_q       <= o_data_d;
             o_data_en_q    <= o_data_en_d;
             o_data_ready_q <= o_data_ready_d;
+            dat_idle_seen_q <= dat_idle_seen_d;
         end
     end
 

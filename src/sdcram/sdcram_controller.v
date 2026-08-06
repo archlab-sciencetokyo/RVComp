@@ -84,6 +84,9 @@ module sdcram_controller (
     wire [ 3:0] sdcram_wen       ;
     wire [31:0] sdcram_wdata     ;
     wire [31:0] sdcram_rdata     ;
+    wire        sdcram_rvalid    ;
+    wire        sdcram_rready    ;
+    wire        sdcram_req_ready ;
     wire        sdcram_busy      ;
     wire [ 3:0] sdcram_state     ;
     wire [ 2:0] sdi_state        ;
@@ -139,6 +142,7 @@ module sdcram_controller (
 //------------------------------------------------------------------------------
     wire wr_fire = wvalid_i  & wready_o;
     wire rd_fire = arvalid_i & arready_o;
+    wire sd_req_fire = sd_req_pending_q & sdcram_req_ready;
 
 //==============================================================================
 // Address decode
@@ -165,24 +169,29 @@ module sdcram_controller (
     assign sdcram_ren   = sd_req_pending_q && sd_req_ren_q;
     assign sdcram_wen   = (sd_req_pending_q && !sd_req_ren_q) ? sd_req_wstrb_q : 4'b0;
     assign sdcram_wdata = sd_req_wdata_q;
+    assign sdcram_rready = (rd_state_q == RD_WAIT_COMPLETE);
 
 //==============================================================================
-// SD request staging logic (single-cycle issue pulse)
+// SD request staging logic (hold request and payload until accepted)
 //------------------------------------------------------------------------------
     always @(*) begin
         sd_req_addr_d    = sd_req_addr_q;
         sd_req_wdata_d   = sd_req_wdata_q;
         sd_req_wstrb_d   = sd_req_wstrb_q;
-        sd_req_ren_d     = 1'b0;
-        sd_req_pending_d = 1'b0;
+        sd_req_ren_d     = sd_req_ren_q;
+        sd_req_pending_d = sd_req_pending_q;
 
-        if (wr_state_q == WR_TX) begin
+        if (sd_req_fire) begin
+            sd_req_wstrb_d   = 4'b0;
+            sd_req_ren_d     = 1'b0;
+            sd_req_pending_d = 1'b0;
+        end else if (!sd_req_pending_q && (wr_state_q == WR_TX)) begin
             sd_req_addr_d    = wr_addr_q;
             sd_req_wdata_d   = wr_data_q;
             sd_req_wstrb_d   = wr_strb_q;
             sd_req_ren_d     = 1'b0;
             sd_req_pending_d = 1'b1;
-        end else if (rd_state_q == RD_TX) begin
+        end else if (!sd_req_pending_q && (rd_state_q == RD_TX)) begin
             sd_req_addr_d    = rd_addr_q;
             sd_req_wdata_d   = 32'b0;
             sd_req_wstrb_d   = 4'b0;
@@ -200,9 +209,10 @@ module sdcram_controller (
                                                     SDCRAM_POLLING_CYCLES_RAW : 1;
 
     sdcram #(
-        .CACHE_DEPTH   (2   ),
-        .BLOCK_NUM     (8   ),
-        .POLLING_CYCLES(SDCRAM_POLLING_CYCLES)
+        .CACHE_DEPTH     (2                    ),
+        .BLOCK_NUM       (8                    ),
+        .POLLING_CYCLES  (SDCRAM_POLLING_CYCLES),
+        .SYS_CLK_FREQ_MHZ(`CLK_FREQ_MHZ         )
     ) sdcram_0 (
         .sys_clk_i      (clk_i       ),
         .sys_rst_i      (!rst_ni     ),
@@ -213,7 +223,10 @@ module sdcram_controller (
         .sdcram_ren_i   (sdcram_ren  ),
         .sdcram_wen_i   (sdcram_wen  ),
         .sdcram_wdata_i (sdcram_wdata),
+        .sdcram_req_ready_o(sdcram_req_ready),
         .sdcram_rdata_o (sdcram_rdata),
+        .sdcram_rvalid_o(sdcram_rvalid),
+        .sdcram_rready_i(sdcram_rready),
         .sdcram_busy_o  (sdcram_busy ),
         // flush
         .flush_i        (flush_pending_q ),
@@ -270,13 +283,15 @@ module sdcram_controller (
             end
 
             WR_WAIT_SDCRAM: begin
-                if (!sdcram_busy) begin
+                if (sdcram_req_ready) begin
                     wr_state_d = WR_TX;
                 end
             end
 
             WR_TX: begin
-                wr_state_d = WR_WAIT_COMPLETE;
+                if (sd_req_fire) begin
+                    wr_state_d = WR_WAIT_COMPLETE;
+                end
             end
 
             WR_WAIT_COMPLETE: begin
@@ -322,7 +337,7 @@ module sdcram_controller (
                         rd_state_d  = RD_RET;
                     end else if (rd_is_window) begin
                         rd_addr_d   = {addr29_q, rd_off};
-                        rd_state_d  = sdcram_busy ? RD_WAIT_SDCRAM : RD_TX;
+                        rd_state_d  = sdcram_req_ready ? RD_TX : RD_WAIT_SDCRAM;
                     end else begin
                         rdata_out_d = 32'b0;
                         rvalid_d    = 1'b1;
@@ -332,17 +347,19 @@ module sdcram_controller (
             end
 
             RD_WAIT_SDCRAM: begin
-                if (!sdcram_busy) begin
+                if (sdcram_req_ready) begin
                     rd_state_d = RD_TX;
                 end
             end
 
             RD_TX: begin
-                rd_state_d = RD_WAIT_COMPLETE;
+                if (sd_req_fire) begin
+                    rd_state_d = RD_WAIT_COMPLETE;
+                end
             end
 
             RD_WAIT_COMPLETE: begin
-                if (!sd_req_pending_q && !sdcram_busy) begin
+                if (sdcram_rvalid) begin
                     rdata_out_d = sdcram_rdata;
                     rvalid_d    = 1'b1;
                     rd_state_d  = RD_RET;

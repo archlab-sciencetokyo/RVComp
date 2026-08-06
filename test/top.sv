@@ -230,6 +230,12 @@ module top;
 `endif
     );
 
+    // Clock generation must only follow the board reset, not the DRAM UI reset.
+    assert property (@(posedge clk) soc.clk_wiz_1.reset == !rst_n)
+        else $fatal(1, "clk_wiz_1 reset does not track the board reset");
+    assert property (@(posedge clk) soc.clk_wiz_2.reset == !rst_n)
+        else $fatal(1, "clk_wiz_2 reset does not track the board reset");
+
     // ram
     string mem_file, kernel_file, initrd_file, dtb_file;
     int unsigned kernel_base, initrd_base, dtb_base;
